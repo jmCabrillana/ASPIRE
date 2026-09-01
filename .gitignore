@@ -24,7 +24,6 @@ node_modules/
 
 # Editors
 .idea/
-.vscode/
 checkpoints/
 libero_dataset/
 .cursor/
@@ -64,3 +63,7 @@ aspire/sim/scripts/common/nv_proxy.py
 aspire/sim/scripts/common/nv_inference_claude.md
 aspire/sim/scripts/robosuite/regression_test.sh
 aspire/sim/docs/development.md
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
