@@ -4,7 +4,7 @@
   summarize_family_run.py RUN_DIR [RUN_DIR ...] [--json out.json]
 
 For each finished round: the task, the rule that chose it, best / mean dev pass rate, the committee's realised disagreement
-(D_prog primary, D_seed, mixed-seed fraction), and the parents chosen from it. If final/best.json exists: the tournament
+(D_seed primary, D_prog, mixed-seed fraction), and the parents chosen from it. If final/best.json exists: the tournament
 winner and macro-average. With several runs, their final macro-averages are listed side by side.
 """
 

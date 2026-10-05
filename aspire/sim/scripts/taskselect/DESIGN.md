@@ -62,15 +62,14 @@ all-pass there is no disagreement to select. The probe is **not** shown to any s
 
 For a task with committee outcomes `o[i][s]` in {0,1} (candidate i, dev seed s), K candidates, S seeds:
 
-* `D_prog` = mean over pairs of `|p_i - p_j|` with `p_i` the pass rate of candidate i. Program-level disagreement; robust to
-  seed noise. **Primary metric.**
+* `D_prog` = mean over pairs of `|p_i - p_j|` with `p_i` the pass rate of candidate i. Program-level disagreement.
 * `D_seed` = mean over seeds of `H2(k_s / K)` with `k_s` the number of passing candidates, `H2` the binary entropy in bits.
   For deterministic outcomes this is the mutual information between the outcome and the candidate identity (BALD); it is
-  maximal at a 50/50 split of the committee.
+  maximal at a 50/50 split of the committee. **Primary metric.**
 * `mixed_seed_frac`, `hamming_mean` (pairwise, normalised): descriptive.
 
-Why both: `D_seed` also rewards seed-level simulator noise (the same program failing on some seeds), which teaches nothing
-about the code; `D_prog` only counts consistent differences between programs. Report both, decide on `D_prog`.
+Why `D_seed` is primary: trials are deterministic per seed (replays reproduce outcomes exactly), so a seed where some
+candidates pass and others fail is a real contrast for the next round, and `D_prog` misses it when pass rates are equal.
 
 ## Selectors (the arms)
 
@@ -82,6 +81,7 @@ All write `iter_NN/task.json` through `scripts/taskselect/select_task.py`; the a
 | `prompt` | the coordinator LLM writes `iter_NN/task_choice.json` (task, predicted pass probability per candidate, rationale); the script validates and records it | committee programs, traces of visited tasks, perception-only descriptors of unvisited tasks |
 | `harness` | the coordinator LLM writes a **proxy** `proxy.py` (a scoring function); the script runs it in a subprocess, takes the argmax over unvisited tasks, records every score | same inputs as `prompt`; the proxy file is hashed and locked (`proxy.lock.json`) so it cannot drift between rounds without `--unlock` being logged |
 | `knn` | script, no LLM: Jaccard-similarity-weighted `D_prog` of visited tasks plus an exploration bonus (0.25 x distance to everything visited) | task descriptors + history; a simple non-LLM reference arm and backtest baseline, not the contribution |
+| `probe` | script, from measurement: `probe-plan` runs the round's candidates on the first dev seed of every unvisited task; the task with the largest per-seed split wins (random fallback if nothing splits) | costs K x unvisited tasks trials per round, recorded in `task.json` |
 | `oracle` | backtest only: picks the truly most-disagreeing task from a known outcome matrix | upper bound, not an online arm |
 
 Descriptors are **perception-only**: the runtime instruction (`env.handle.task_language`) plus the reset-frame images
@@ -124,11 +124,23 @@ orders (many random draws) and the oracle. Reported: mean, bootstrap CI, fractio
 | `make_families.py`, `families.json` | family definitions, validated against LIBERO |
 | `core.py` | history loading, metrics, rules, proxy sandbox (standard library only) |
 | `select_task.py` | `select`, `context`, `verify`, `eval-cmd`, `init-from`, `final-plan`, `final-pick`, `heldout-cmds`, `heldout-summary`, `render-prompt` |
-| `backtest.py` | offline selector comparison on an outcome matrix (or a synthetic one) |
+| `backtest.py` | offline selector comparison on an outcome matrix (or a synthetic one), incl. probe rules with held-out seeds |
+| `run_matrix.py` | evaluates one candidate set on every family task: the outcome matrix |
+| `score_predictions.py` | scores predicted pass probabilities against a matrix (Brier, AUC, pick quality) |
 | `summarize_family_run.py` | per-round table for one run, side by side for several |
 | `describe_tasks.py` | reset-frame images and runtime instruction per task (needs the simulator and the perception servers) |
 | `prompts/` | `family_evosearch_prompt.md` + one `arm_<rule>.md` per arm; `select_task.py render-prompt` fills in family / arm / repetition |
 | `tests/test_taskselect.py` | unit tests on synthetic data (no GPU) |
+
+## First measurements (goal_swap, 8 untuned round-0 programs, seeds 51-55, 2026-10-05)
+
+* Matrix: 28 of 400 trials pass; 5 of 10 tasks are all-fail; two programs hold 24 of the 28 passes, on different tasks.
+* Prediction from code and images alone is at chance (AUC 0.44 and 0.52 over two runs; both would pick an all-fail task).
+  Given the round-0 results it is better but unstable (AUC 0.82 and 0.62; one run picks the best task, one an all-fail task).
+* A one-seed probe ranks tasks by held-out `D_seed` with Spearman 0.80-0.92 and picks the best task for all five probe seeds.
+* Cost-adjusted backtest, 5 rounds: probe 1.87-2.10 cumulative `D_seed`; random 0.88-1.02 at the same rounds and 1.31-1.51
+  when given 2 extra rounds for the 240 probe trials.
+* One family and one committee: not yet evidence that more disagreement gives better programs, which only online runs can show.
 
 ## Status and known limits
 

@@ -4,7 +4,9 @@
 The task of round N is chosen after the candidates of round N exist, so the committee is the set of programs about to be
 evaluated. The agent never writes task.json by hand.
 
-  select       --family F --run-dir R --round N --rule random|knn|prompt|harness [--salt r1] [--choice f] [--proxy f]
+  select       --family F --run-dir R --round N --rule random|knn|prompt|harness|probe [--salt r1] [--choice f] [--proxy f]
+  probe-plan   --family F --run-dir R --round N [--probe-seeds 1]   probe rule: commands measuring the round's candidates on
+                                                        the first dev seed(s) of every unvisited task
   context      --family F --run-dir R --round N        briefing for the prompt / harness rules (also saved to iter_NN/context.json)
   verify       --family F --run-dir R                   consistency of every round's task.json with the family and the eval summary
   eval-cmd     --run-dir R --round N [--gpu 0]          the exact evosearch_eval.py command for the chosen task
@@ -30,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core  # noqa: E402
 from core import fail  # noqa: E402
 
-RULES = ("random", "knn", "prompt", "harness")
+RULES = ("random", "knn", "prompt", "harness", "probe")
 SCRIPT = Path(__file__).resolve()
 PROMPTS = core.HERE / "prompts"
 
@@ -93,6 +95,73 @@ def validate_choice(choice_path: Path, unvisited: list[str], committee_names: li
             "rationale": rationale.strip()}
 
 
+def _eval_command(iter_dir: Path, suite: str, task: str, seeds: list[int], gpu: str, parallel: str) -> str:
+    return (f"TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 .venv-libero/bin/python3 scripts/libero/evosearch_eval.py "
+            f"--iter-dir {iter_dir} --suite {suite} --task {task} --trials {len(seeds)} "
+            f"--trial-seeds {' '.join(map(str, seeds))} --sim-gpus {gpu} --parallel-per-gpu {parallel} --no-highlights")
+
+
+def cmd_probe_plan(args: argparse.Namespace) -> int:
+    doc, family_name, family = load_family(args)
+    run_dir = Path(args.run_dir).resolve()
+    n = args.round
+    if n < 1:
+        fail("round 0 has a fixed task; nothing to probe")
+    iter_dir = run_dir / f"iter_{n:02d}"
+    committee = committee_of(iter_dir)
+    if not committee:
+        fail(f"write {iter_dir}/candidate_*/code.py before probing")
+    visited = [h["task_id"] for h in core.load_history(run_dir, before_round=n)]
+    seeds = doc["dev_seeds"][:args.probe_seeds]
+    code = {c["candidate"]: core.file_sha256(Path(c["code_path"])) for c in committee}
+    plan_path = iter_dir / "probe" / "plan.json"
+    if plan_path.exists():
+        plan = json.loads(plan_path.read_text())
+        if plan["seeds"] != seeds or plan["code_sha256"] != code or plan["visited"] != visited:
+            fail(f"{plan_path} was made for other seeds, candidates or history; refusing to mix probes")
+    else:
+        tasks = []
+        for k, t in enumerate(family["tasks"]):
+            if t["id"] in visited:
+                continue
+            tdir = iter_dir / "probe" / f"task_{k:02d}"
+            for c in committee:
+                (tdir / c["candidate"]).mkdir(parents=True, exist_ok=True)
+                shutil.copy2(c["code_path"], tdir / c["candidate"] / "code.py")
+            tasks.append({"id": t["id"], "suite": t["suite"], "task": t["task"], "dir": str(tdir)})
+        plan = {"round": n, "family": family_name, "seeds": seeds, "visited": visited, "code_sha256": code,
+                "tasks": tasks, "created_at": now()}
+        plan_path.write_text(json.dumps(plan, indent=2) + "\n")
+    for t in plan["tasks"]:
+        if not (Path(t["dir"]) / "iter_summary.json").exists():
+            print(_eval_command(Path(t["dir"]), t["suite"], t["task"], plan["seeds"], args.gpu, args.parallel))
+    return 0
+
+
+def read_probe(iter_dir: Path, family: dict, unvisited: list[str], kind: str) -> tuple[dict[str, float], int]:
+    """Probe scores of every unvisited task, after checking the probe measured the current candidates."""
+    plan_path = iter_dir / "probe" / "plan.json"
+    if not plan_path.exists():
+        fail(f"{plan_path} missing: run probe-plan and its commands first")
+    plan = json.loads(plan_path.read_text())
+    code = {c["candidate"]: core.file_sha256(Path(c["code_path"])) for c in committee_of(iter_dir)}
+    if plan["code_sha256"] != code:
+        fail("candidates changed after the probe was planned; the probe no longer describes them")
+    if [t["id"] for t in plan["tasks"]] != unvisited:
+        fail("probe plan does not cover exactly the unvisited tasks")
+    scores, trials = {}, 0
+    for t in plan["tasks"]:
+        d = Path(t["dir"])
+        if not (d / "iter_summary.json").exists():
+            fail(f"probe not finished: no results for {t['id']}")
+        r = core.load_round(d)
+        if r["task_id"] != t["id"] or r["seeds"] != sorted(plan["seeds"]) or sorted(r["outcomes"]) != sorted(code):
+            fail(f"{d}: probe results do not match the plan (task, seeds or candidates)")
+        scores[t["id"]] = core.probe_score(r["outcomes"], kind)
+        trials += len(r["outcomes"]) * len(r["seeds"])
+    return scores, trials
+
+
 def cmd_select(args: argparse.Namespace) -> int:
     doc, family_name, family = load_family(args)
     run_dir = Path(args.run_dir).resolve()
@@ -121,6 +190,14 @@ def cmd_select(args: argparse.Namespace) -> int:
         if rule == "random":
             chosen = core.pick_random(family_name, ids, visited, args.salt)
             record["salt"] = args.salt
+        elif rule == "probe":
+            scores, n_trials = read_probe(iter_dir, family, unvisited, args.probe_score)
+            record.update({"scores": scores, "probe_score": args.probe_score, "probe_trials": n_trials, "salt": args.salt})
+            if max(scores.values()) > 0:
+                chosen = core.argmax_in_order(scores, ids)
+            else:
+                chosen = core.pick_random(family_name, ids, visited, args.salt)
+                record["fallback"] = "random: no pass/fail split on any probed task"
         elif rule == "knn":
             descriptors = {t["id"]: core.describe(t, descriptors_dir) for t in family["tasks"]}
             scores = core.knn_scores(family, history, descriptors)
@@ -219,7 +296,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
             rules.add(rec.get("requested_rule"))
             if rec.get("rule") != rec.get("requested_rule"):
                 problems.append(f"{d.name}: rule {rec.get('rule')} != requested {rec.get('requested_rule')}")
-            if rec.get("rule") == "random":
+            if rec.get("rule") in ("random", "probe"):
                 salts.add(rec.get("salt"))
             if rec.get("visited_before") != expected_visited:
                 problems.append(f"{d.name}: visited_before {rec.get('visited_before')} != earlier rounds {expected_visited}")
@@ -253,11 +330,7 @@ def cmd_eval_cmd(args: argparse.Namespace) -> int:
     if not tj.exists():
         fail(f"{tj} missing: run select_task.py select first")
     rec = json.loads(tj.read_text())
-    seeds = " ".join(str(s) for s in rec["seeds"])
-    print(f"TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 .venv-libero/bin/python3 scripts/libero/evosearch_eval.py "
-          f"--iter-dir {iter_dir} --suite {rec['suite']} --task {rec['task']} "
-          f"--trials {len(rec['seeds'])} --trial-seeds {seeds} "
-          f"--sim-gpus {args.gpu} --parallel-per-gpu {args.parallel} --no-highlights")
+    print(_eval_command(iter_dir, rec["suite"], rec["task"], rec["seeds"], args.gpu, args.parallel))
     return 0
 
 
@@ -320,10 +393,7 @@ def cmd_final_plan(args: argparse.Namespace) -> int:
                 "created_at": now()}
         plan_path.write_text(json.dumps(plan, indent=2) + "\n")
     for t in plan["tasks"]:
-        print(f"TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 .venv-libero/bin/python3 scripts/libero/evosearch_eval.py "
-              f"--iter-dir {t['dir']} --suite {t['suite']} --task {t['task']} --trials {len(plan['seeds'])} "
-              f"--trial-seeds {' '.join(map(str, plan['seeds']))} --sim-gpus {args.gpu} "
-              f"--parallel-per-gpu {args.parallel} --no-highlights")
+        print(_eval_command(Path(t["dir"]), t["suite"], t["task"], plan["seeds"], args.gpu, args.parallel))
     return 0
 
 
@@ -455,6 +525,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--choice", help="prompt rule: task_choice.json (default iter_NN/task_choice.json)")
     s.add_argument("--proxy", help="harness rule: proxy.py")
     s.add_argument("--unlock", action="store_true", help="harness rule: accept a changed proxy (logged)")
+    s.add_argument("--probe-score", choices=core.PROBE_SCORES, default="split", help="probe rule: how a probed task is scored")
+    pp = sub.add_parser("probe-plan"); common(pp, rnd=True)
+    pp.add_argument("--probe-seeds", type=int, default=1); pp.add_argument("--gpu", default="0"); pp.add_argument("--parallel", default="2")
     c = sub.add_parser("context"); common(c, rnd=True)
     v = sub.add_parser("verify"); common(v)
     e = sub.add_parser("eval-cmd"); common(e, family=False, rnd=True)
@@ -473,7 +546,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-COMMANDS = {"select": cmd_select, "context": cmd_context, "verify": cmd_verify, "eval-cmd": cmd_eval_cmd,
+COMMANDS = {"probe-plan": cmd_probe_plan, "select": cmd_select, "context": cmd_context, "verify": cmd_verify, "eval-cmd": cmd_eval_cmd,
             "init-from": cmd_init_from, "final-plan": cmd_final_plan, "final-pick": cmd_final_pick,
             "heldout-cmds": cmd_heldout_cmds, "heldout-summary": cmd_heldout_summary,
             "render-prompt": cmd_render_prompt}

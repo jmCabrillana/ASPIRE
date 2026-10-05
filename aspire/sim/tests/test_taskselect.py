@@ -274,8 +274,8 @@ def test_knn_prefers_the_neighbour_of_a_disagreeing_task():
     def task(name):
         return {"id": f"s/{name}", "suite": "s", "task": name, "language_static": name.replace("_", " ")}
     family = {"tasks": [task("open_drawer_one"), task("turn_on_stove"), task("open_drawer_two"), task("turn_on_stove_again")]}
-    history = [{"task_id": "s/open_drawer_one", "metrics": {"D_prog": 0.9}},
-               {"task_id": "s/turn_on_stove", "metrics": {"D_prog": 0.0}}]
+    history = [{"task_id": "s/open_drawer_one", "metrics": {"D_seed": 0.9}},
+               {"task_id": "s/turn_on_stove", "metrics": {"D_seed": 0.0}}]
     scores = core.knn_scores(family, history)
     assert set(scores) == {"s/open_drawer_two", "s/turn_on_stove_again"}
     assert scores["s/open_drawer_two"] > scores["s/turn_on_stove_again"]
@@ -428,6 +428,87 @@ def test_proxy_environment_is_scrubbed_and_times_out(tmp_path, monkeypatch):
         core.run_proxy(slow, {"unvisited": ["a"]}, ["a"], timeout=2)
 
 
+def test_probe_score_hand_computed():
+    split = {"A": [1, 1], "B": [0, 1], "C": [0, 1], "D": [0, 1]}        # seed 1: 1 of 4 pass; seed 2: all pass
+    assert core.probe_score(split, "split") == pytest.approx(0.8112781 / 2, abs=1e-5)
+    assert core.probe_score(split, "regret") == pytest.approx((0.75 + 0.0) / 2)
+    assert core.probe_score(split, "learnability") == pytest.approx(5 / 8 * 3 / 8)
+    assert core.probe_score({"A": [0], "B": [0]}, "regret") == 0.0 == core.probe_score({"A": [0], "B": [0]}, "split")
+    with pytest.raises(SystemExit):
+        core.probe_score(split, "nope")
+
+
+def probe_setup(run_dir, capsys):
+    """Candidates of round 1 written and probe-plan run; returns the plan."""
+    for n in ("candidate_A", "candidate_B"):
+        (run_dir / "iter_01" / n).mkdir(parents=True, exist_ok=True)
+        (run_dir / "iter_01" / n / "code.py").write_text(f"# {n}\n")
+    capsys.readouterr()
+    assert select_task.main(["probe-plan", "--family", FAMILY, "--run-dir", str(run_dir), "--round", "1"]) == 0
+    cmds = capsys.readouterr().out.strip().splitlines()
+    return json.loads((run_dir / "iter_01" / "probe" / "plan.json").read_text()), cmds
+
+
+def test_probe_rule_picks_the_measured_split(run_dir, goal, capsys):
+    plan, cmds = probe_setup(run_dir, capsys)
+    assert len(plan["tasks"]) == len(cmds) == len(goal["tasks"]) - 1 and plan["seeds"] == [51]
+    assert all("--trial-seeds 51 " in c and "--trials 1 " in c for c in cmds)
+    assert goal["round0"] not in [t["id"] for t in plan["tasks"]]
+    with pytest.raises(SystemExit):                              # probe not run yet
+        run_select(run_dir, 1, "probe")
+    target = plan["tasks"][3]
+    for t in plan["tasks"]:
+        split = t is target
+        write_summary(Path(t["dir"]), t["id"], {"candidate_A": [1 if split else 0], "candidate_B": [0]}, [51], code=False)
+    capsys.readouterr()
+    assert select_task.main(["probe-plan", "--family", FAMILY, "--run-dir", str(run_dir), "--round", "1"]) == 0
+    assert capsys.readouterr().out.strip() == ""                 # nothing left to run
+    assert run_select(run_dir, 1, "probe", "--salt", "r1") == 0
+    rec = json.loads((run_dir / "iter_01" / "task.json").read_text())
+    assert rec["task_id"] == target["id"] and rec["rule"] == "probe" and "fallback" not in rec
+    assert rec["probe_trials"] == 2 * len(plan["tasks"]) and rec["scores"][target["id"]] == 1.0
+    assert select_task.main(["verify", "--family", FAMILY, "--run-dir", str(run_dir)]) == 0
+
+
+def test_probe_rule_falls_back_to_random_when_nothing_splits(run_dir, goal, capsys):
+    plan, _ = probe_setup(run_dir, capsys)
+    for t in plan["tasks"]:
+        write_summary(Path(t["dir"]), t["id"], {"candidate_A": [0], "candidate_B": [0]}, [51], code=False)
+    assert run_select(run_dir, 1, "probe", "--salt", "r1") == 0
+    rec = json.loads((run_dir / "iter_01" / "task.json").read_text())
+    assert rec["fallback"].startswith("random")
+    assert rec["task_id"] == core.pick_random(FAMILY, core.task_ids(goal), [goal["round0"]], "r1")
+
+
+def test_probe_is_refused_when_candidates_changed_or_results_mismatch(run_dir, capsys):
+    plan, _ = probe_setup(run_dir, capsys)
+    for t in plan["tasks"]:
+        write_summary(Path(t["dir"]), t["id"], {"candidate_A": [1], "candidate_B": [0]}, [52], code=False)
+    with pytest.raises(SystemExit):                              # probed on another seed than planned
+        run_select(run_dir, 1, "probe")
+    for t in plan["tasks"]:
+        write_summary(Path(t["dir"]), t["id"], {"candidate_A": [1], "candidate_B": [0]}, [51], code=False)
+    (run_dir / "iter_01" / "candidate_A" / "code.py").write_text("# edited after the probe\n")
+    with pytest.raises(SystemExit):
+        run_select(run_dir, 1, "probe")
+    with pytest.raises(SystemExit):
+        select_task.main(["probe-plan", "--family", FAMILY, "--run-dir", str(run_dir), "--round", "1"])
+    assert not (run_dir / "iter_01" / "task.json").exists()
+
+
+def test_backtest_probe_rule_on_synthetic_matches_oracle_and_holds_out_probe_seeds():
+    matrix = backtest.make_synthetic(seed=0)
+    rep = backtest.backtest(matrix, ["probe", "probe_regret", "oracle"], budget=4, draws=200, probe_seeds=2)
+    assert rep["probe_seeds_held_out"] == 2 and rep["metric"] == "D_seed"
+    probe, oracle = rep["rules"]["probe"], rep["rules"]["oracle"]
+    assert all("drawer" in p for p in probe["picks"])            # the planted split cluster
+    assert probe["cumulative"] <= oracle["cumulative"] and probe["fraction_of_random_beaten"] > 0.9
+    assert probe["probe_trials"] == 8 * 2 * (11 + 10 + 9) and oracle["probe_trials"] == 0
+    assert backtest.backtest(matrix, ["knn"], budget=4, draws=50)["probe_seeds_held_out"] == 0
+    with pytest.raises(SystemExit):
+        backtest.backtest(matrix, ["probe"], budget=4, draws=5, probe_seeds=15)
+
+
 def test_init_from_copies_round0_and_checks_provenance(tmp_path, goal):
     ref, new = tmp_path / "ref", tmp_path / "new"
     d = write_round(ref, 0, goal["round0"], committee({"candidate_A": 2, "candidate_B": 5}))
@@ -500,7 +581,7 @@ def test_final_plan_and_pick(tmp_path, toy_families, capsys):
     matrix = json.loads((r / "final" / "matrix.json").read_text())
     assert matrix["family"] == "toy" and len(matrix["tasks"]) == 3 and set(matrix["outcomes"]) == {"s/t0", "s/t1", "s/t2"}
     rep = backtest.backtest(matrix, ["knn", "oracle"], budget=3, draws=20)
-    assert rep["rules"]["oracle"]["cumulative_D_prog"] >= rep["rules"]["knn"]["cumulative_D_prog"]
+    assert rep["rules"]["oracle"]["cumulative"] >= rep["rules"]["knn"]["cumulative"]
 
 
 def test_final_plan_needs_parent_selection(tmp_path, toy_families):
@@ -535,8 +616,8 @@ def test_backtest_synthetic_selection_beats_random_and_oracle_bounds_it():
     matrix = backtest.make_synthetic(seed=0)
     rep = backtest.backtest(matrix, ["knn", "oracle"], budget=5, draws=300)
     knn, oracle = rep["rules"]["knn"], rep["rules"]["oracle"]
-    assert knn["cumulative_D_prog"] > rep["random"]["mean"]
-    assert oracle["cumulative_D_prog"] >= knn["cumulative_D_prog"]
+    assert knn["cumulative"] > rep["random"]["mean"]
+    assert oracle["cumulative"] >= knn["cumulative"]
     assert oracle["fraction_of_random_beaten"] >= 0.95
     assert len(knn["picks"]) == 4 and rep["round0"] not in knn["picks"]
     assert backtest.backtest(matrix, ["knn", "oracle"], budget=5, draws=300) == rep
@@ -547,7 +628,7 @@ def test_backtest_harness_proxy_and_oracle_proxy(tmp_path):
     good = tmp_path / "good.py"                      # a proxy that reads the language: drawer tasks split the committee
     good.write_text("def score(ctx):\n    return {t['id']: float('drawer' in t['language']) for t in ctx['tasks'] if t['id'] in ctx['unvisited']}\n")
     rep = backtest.backtest(matrix, ["harness", "oracle"], budget=4, draws=200, proxy=good)
-    assert rep["rules"]["harness"]["cumulative_D_prog"] > rep["random"]["mean"]
+    assert rep["rules"]["harness"]["cumulative"] > rep["random"]["mean"]
     assert all("drawer" in p for p in rep["rules"]["harness"]["picks"])
 
 
@@ -559,7 +640,7 @@ def test_backtest_rejects_bad_budget_and_unknown_round0():
         backtest.backtest(matrix, ["knn"], budget=3, draws=5, round0="nope/none")
 
 
-@pytest.mark.parametrize("arm, needle", [("random", "--rule random --salt r2"), ("knn", "--rule knn"),
+@pytest.mark.parametrize("arm, needle", [("random", "--rule random --salt r2"), ("knn", "--rule knn"), ("probe", "probe-plan"),
                                          ("prompt", "task_choice.json"), ("harness", "proxy.py")])
 def test_render_prompt_fills_every_placeholder(arm, needle, capsys):
     capsys.readouterr()
@@ -575,7 +656,7 @@ def test_render_prompt_fills_every_placeholder(arm, needle, capsys):
     assert "outputs/ref/x" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("arm", ["random", "knn", "prompt", "harness"])
+@pytest.mark.parametrize("arm", ["random", "knn", "prompt", "harness", "probe"])
 def test_every_select_task_command_in_the_prompt_parses(arm, capsys):
     """Each `select_task.py <cmd> ...` line in a rendered prompt is accepted by the real argument parser."""
     import shlex

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Offline comparison of task selectors on a known candidates x tasks x seeds outcome matrix.
 
-Replays a selector for a budget of B rounds on a fixed committee and reports the cumulative realised D_prog of its picks
+Replays a selector for a budget of B rounds on a fixed committee and reports the cumulative realised D_seed of its picks
 (round 0 is fixed and shared, so excluded) against the distribution of random orders and the oracle.
+
+Probe rules (probe = per-seed split, probe_regret, probe_learnability) score every unvisited task from the first --probe-seeds seeds of the
+matrix. When one is requested, the realised D_seed of EVERY rule is computed on the remaining seeds only.
 
   backtest.py --matrix R/final/matrix.json --rules random,knn,oracle --budget 5
   backtest.py --synthetic --rules random,knn,oracle --budget 5 [--proxy proxy.py]
@@ -25,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core  # noqa: E402
 from core import fail  # noqa: E402
 
-RULES = ("random", "knn", "oracle", "harness")
+RULES = ("random", "knn", "oracle", "harness", "probe", "probe_regret", "probe_learnability")
 
 
 def make_synthetic(seed: int = 0, per_cluster: int = 4, k: int = 8, n_seeds: int = 15) -> dict:
@@ -62,14 +65,24 @@ def _history_entry(matrix: dict, n: int, tid: str) -> dict:
             "seeds": list(range(len(next(iter(out.values())))))}
 
 
+def _restrict(outcomes: dict[str, list[int]], idx: list[int]) -> dict[str, list[int]]:
+    return {n: [row[i] for i in idx] for n, row in outcomes.items()}
+
+
 def simulate(matrix: dict, rule: str, budget: int, round0: str, salt: str = "s0",
-             proxy: Path | None = None) -> dict:
+             proxy: Path | None = None, probe_seeds: int = 0) -> dict:
+    """probe_seeds > 0 holds the first probe_seeds seeds out of the realised metric (for every rule)."""
     ids = [t["id"] for t in matrix["tasks"]]
     family = {"tasks": matrix["tasks"]}
     if budget < 1 or budget > len(ids):
         fail(f"budget must be in 1..{len(ids)}")
     history = [_history_entry(matrix, 0, round0)]
-    d_true = {tid: core.committee_metrics(matrix["outcomes"][tid])["D_prog"] for tid in ids}
+    n_seeds = len(next(iter(matrix["outcomes"][ids[0]].values())))
+    if not 0 <= probe_seeds < n_seeds:
+        fail(f"probe seeds must be in 0..{n_seeds - 1}")
+    probe_idx, eval_idx = list(range(probe_seeds)), list(range(probe_seeds, n_seeds))
+    d_true = {tid: core.committee_metrics(_restrict(matrix["outcomes"][tid], eval_idx))[core.PRIMARY] for tid in ids}
+    probe_trials = 0
     for n in range(1, budget):
         visited = [h["task_id"] for h in history]
         unvisited = [t for t in ids if t not in visited]
@@ -79,6 +92,14 @@ def simulate(matrix: dict, rule: str, budget: int, round0: str, salt: str = "s0"
             tid = core.argmax_in_order(core.knn_scores(family, history), ids)
         elif rule == "oracle":
             tid = core.argmax_in_order({t: d_true[t] for t in unvisited}, ids)
+        elif rule.startswith("probe"):
+            if not probe_idx:
+                fail("probe rules need probe_seeds >= 1")
+            kind = rule.removeprefix("probe_") if "_" in rule else "split"
+            scores = {t: core.probe_score(_restrict(matrix["outcomes"][t], probe_idx), kind) for t in unvisited}
+            probe_trials += len(unvisited) * len(matrix["candidates"]) * len(probe_idx)
+            tid = (core.argmax_in_order(scores, ids) if max(scores.values()) > 0
+                   else core.pick_random(matrix.get("family", "matrix"), ids, visited, salt))
         elif rule == "harness":
             if proxy is None:
                 fail("rule 'harness' needs --proxy")
@@ -92,7 +113,7 @@ def simulate(matrix: dict, rule: str, budget: int, round0: str, salt: str = "s0"
         history.append(_history_entry(matrix, n, tid))
     picks = [h["task_id"] for h in history[1:]]
     d = [d_true[t] for t in picks]
-    return {"rule": rule, "picks": picks, "D_prog": d, "cumulative_D_prog": round(sum(d), 6)}
+    return {"rule": rule, "picks": picks, "realised": d, "cumulative": round(sum(d), 6), "probe_trials": probe_trials}
 
 
 def percentile(sorted_values: list[float], q: float) -> float:
@@ -104,14 +125,16 @@ def percentile(sorted_values: list[float], q: float) -> float:
 
 
 def backtest(matrix: dict, rules: list[str], budget: int, draws: int, proxy: Path | None = None,
-             round0: str | None = None) -> dict:
+             round0: str | None = None, probe_seeds: int = 1) -> dict:
     r0 = round0 or round0_of(matrix)
     ids = [t["id"] for t in matrix["tasks"]]
     if r0 not in ids:
         fail(f"round0 {r0!r} not in matrix tasks")
-    random_runs = sorted(simulate(matrix, "random", budget, r0, salt=f"s{i}")["cumulative_D_prog"]
+    held = probe_seeds if any(r.startswith("probe") for r in rules) else 0
+    random_runs = sorted(simulate(matrix, "random", budget, r0, salt=f"s{i}", probe_seeds=held)["cumulative"]
                          for i in range(draws))
     report = {"family": matrix.get("family"), "budget": budget, "round0": r0, "n_tasks": len(ids),
+              "metric": core.PRIMARY, "probe_seeds_held_out": held,
               "random": {"draws": draws, "mean": round(statistics.fmean(random_runs), 6),
                          "std": round(statistics.pstdev(random_runs), 6),
                          "ci95": [round(percentile(random_runs, 0.025), 6), round(percentile(random_runs, 0.975), 6)]},
@@ -119,9 +142,9 @@ def backtest(matrix: dict, rules: list[str], budget: int, draws: int, proxy: Pat
     for rule in rules:
         if rule == "random":
             continue
-        res = simulate(matrix, rule, budget, r0, proxy=proxy)
-        below = sum(x < res["cumulative_D_prog"] for x in random_runs)
-        ties = sum(x == res["cumulative_D_prog"] for x in random_runs)
+        res = simulate(matrix, rule, budget, r0, proxy=proxy, probe_seeds=held)
+        below = sum(x < res["cumulative"] for x in random_runs)
+        ties = sum(x == res["cumulative"] for x in random_runs)
         res["fraction_of_random_beaten"] = round((below + 0.5 * ties) / len(random_runs), 4)
         report["rules"][rule] = res
     return report
@@ -129,12 +152,15 @@ def backtest(matrix: dict, rules: list[str], budget: int, draws: int, proxy: Pat
 
 def print_report(rep: dict) -> None:
     r = rep["random"]
-    print(f"family={rep['family']}  tasks={rep['n_tasks']}  budget={rep['budget']}  round0={rep['round0']}")
-    print(f"  random ({r['draws']} orders)   cumulative D_prog mean {r['mean']:.3f}  std {r['std']:.3f}  "
+    held = f"  (first {rep['probe_seeds_held_out']} seed(s) held out for probing)" if rep["probe_seeds_held_out"] else ""
+    print(f"family={rep['family']}  tasks={rep['n_tasks']}  budget={rep['budget']}  round0={rep['round0']}  "
+          f"metric=cumulative {rep['metric']}{held}")
+    print(f"  random ({r['draws']} orders)  mean {r['mean']:.3f}  std {r['std']:.3f}  "
           f"95% range [{r['ci95'][0]:.3f}, {r['ci95'][1]:.3f}]")
     for rule, res in rep["rules"].items():
-        print(f"  {rule:8s} cumulative D_prog {res['cumulative_D_prog']:.3f}  beats {res['fraction_of_random_beaten']:.0%} "
-              f"of random orders   picks: " + ", ".join(p.split('/')[-1][:24] for p in res["picks"]))
+        cost = f"  probe trials {res['probe_trials']}" if res["probe_trials"] else ""
+        print(f"  {rule:12s} {res['cumulative']:.3f}  beats {res['fraction_of_random_beaten']:.0%} of random orders{cost}"
+              f"   picks: " + ", ".join(p.split('/')[-1][:24] for p in res["picks"]))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -148,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--random-draws", type=int, default=500)
     p.add_argument("--proxy", type=Path)
     p.add_argument("--round0")
+    p.add_argument("--probe-seeds", type=int, default=1, help="seeds a probe rule measures per task")
     p.add_argument("--json", type=Path, help="write the report here")
     args = p.parse_args(argv)
     matrix = make_synthetic(args.seed) if args.synthetic else json.loads(args.matrix.read_text())
@@ -155,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     bad = [r for r in rules if r not in RULES]
     if bad:
         fail(f"unknown rules {bad}; known: {RULES}")
-    rep = backtest(matrix, rules, args.budget, args.random_draws, args.proxy, args.round0)
+    rep = backtest(matrix, rules, args.budget, args.random_draws, args.proxy, args.round0, args.probe_seeds)
     print_report(rep)
     if args.json:
         args.json.write_text(json.dumps(rep, indent=2) + "\n")
