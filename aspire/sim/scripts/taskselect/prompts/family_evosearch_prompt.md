@@ -29,7 +29,11 @@ Round procedure (exact order)
      then skip to "parents". Otherwise ONE subagent writes iter_00/candidate_A..H/code.py: 8 diverse general programs.
    - Evaluate: print the command with `select_task.py eval-cmd --run-dir $RUN_DIR --round 0 --gpu 0 --parallel 2`, launch it detached
      (setsid nohup <cmd> > $RUN_DIR/iter_00/eval.log 2>&1 &) and poll for iter_00/iter_summary.json with short Bash calls.
-2. Parents of the round just evaluated (select_parents.py select, above).
+2. Parents of the round just evaluated (select_parents.py select, above). Then the family score of the round:
+     .venv/bin/python3 scripts/taskselect/select_task.py score-plan --family {{FAMILY}} --run-dir $RUN_DIR --round N --gpu 0 --parallel 2
+   run each printed command (one at a time, detached), then
+     .venv/bin/python3 scripts/taskselect/select_task.py score-pick --run-dir $RUN_DIR --round N
+   It is a measurement only: nobody reads iter_NN/score/ (not you, not the subagent) and it never changes parents or tasks.
 3. Round N >= 1:
    a. ONE subagent writes iter_N/candidate_A..H/code.py from the parents only, learning from the traces of every task
       visited so far (and nothing else). It may replay candidates only on visited tasks. It does not know the next task.

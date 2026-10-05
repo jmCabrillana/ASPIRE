@@ -728,3 +728,103 @@ def test_integration_five_rounds_with_real_select_parents(tmp_path, goal, capsys
     plan = json.loads((r / "final" / "plan.json").read_text())
     assert all(p.startswith("iter_04/") for p in plan["parents"]) and plan["seeds"] == DEV[:3]
     assert len({json.loads((r / f"iter_{n:02d}" / "task.json").read_text())["task_id"] for n in range(5)}) == 5
+
+
+def test_revisit_lets_random_and_probe_select_a_visited_task(run_dir, goal, capsys):
+    ids = core.task_ids(goal)
+    with pytest.raises(SystemExit):
+        run_select(run_dir, 1, "knn", "--allow-revisit")
+    for n in ("candidate_A", "candidate_B"):
+        (run_dir / "iter_01" / n).mkdir(parents=True, exist_ok=True)
+        (run_dir / "iter_01" / n / "code.py").write_text(f"# {n}\n")
+    capsys.readouterr()
+    assert select_task.main(["probe-plan", "--family", FAMILY, "--run-dir", str(run_dir), "--round", "1",
+                             "--allow-revisit"]) == 0
+    assert len(capsys.readouterr().out.strip().splitlines()) == len(ids)          # the visited task is probed too
+    plan = json.loads((run_dir / "iter_01" / "probe" / "plan.json").read_text())
+    for t in plan["tasks"]:
+        split = t["id"] == goal["round0"]
+        write_summary(Path(t["dir"]), t["id"], {"candidate_A": [1 if split else 0], "candidate_B": [0]}, [51], code=False)
+    with pytest.raises(SystemExit):                              # the plan was made with revisits; select must agree
+        run_select(run_dir, 1, "probe")
+    assert run_select(run_dir, 1, "probe", "--allow-revisit") == 0
+    rec = json.loads((run_dir / "iter_01" / "task.json").read_text())
+    assert rec["task_id"] == goal["round0"] and rec["allow_revisit"] is True
+    write_round(run_dir, 1, goal["round0"], committee({"candidate_A": 5, "candidate_B": 1}))
+    assert select_task.main(["verify", "--family", FAMILY, "--run-dir", str(run_dir)]) == 0
+    picks = {core.pick_random_any(FAMILY, ids, "r1", n) for n in range(1, 60)}
+    assert picks <= set(ids) and len(picks) > 1
+    assert core.pick_random_any(FAMILY, ids, "r1", 3) == core.pick_random_any(FAMILY, ids, "r1", 3)
+
+
+def test_verify_rejects_a_repeat_without_revisit_and_mixed_settings(run_dir, goal, capsys):
+    rec = json.loads((run_dir / "iter_00" / "task.json").read_text())
+    rec.update({"round": 1, "rule": "random", "requested_rule": "random", "salt": "r1",
+                "visited_before": [goal["round0"]], "allow_revisit": False})
+    (run_dir / "iter_01").mkdir()
+    (run_dir / "iter_01" / "task.json").write_text(json.dumps(rec))
+    code, out = verify(run_dir, capsys)
+    assert code == 1 and "already used" in out
+    rec["allow_revisit"] = True
+    (run_dir / "iter_01" / "task.json").write_text(json.dumps(rec))
+    assert verify(run_dir, capsys)[0] == 0
+    write_round(run_dir, 1, goal["round0"], committee({"candidate_A": 1, "candidate_B": 2}))
+    with pytest.raises(SystemExit):                              # the history has a repeat; select needs the flag
+        run_select(run_dir, 2, "random", "--salt", "r1")
+    rec.update({"round": 2, "task_id": f"{GOAL}/turn_on_the_stove", "allow_revisit": False,
+                "visited_before": [goal["round0"], goal["round0"]]})
+    (run_dir / "iter_02").mkdir(exist_ok=True)
+    (run_dir / "iter_02" / "task.json").write_text(json.dumps(rec))
+    code, out = verify(run_dir, capsys)
+    assert code == 1 and "one setting" in out
+
+
+def test_family_score_per_round_and_regret(tmp_path, toy_families, capsys):
+    spec = importlib.util.spec_from_file_location("summarize_family_run", ROOT / "scripts/taskselect/summarize_family_run.py")
+    summ = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(summ)
+    assert summ.regret([0.2, 0.5, 0.8], 0.8) == {"regret": 0.9, "rounds_to_target": 2}
+    assert summ.regret([0.2, 0.3], 0.8)["rounds_to_target"] is None
+
+    def run_with_scores(name, passes_per_round):
+        r = tmp_path / name
+        for n, k in enumerate(passes_per_round):
+            write_round(r, n, f"s/t{n}", committee({"candidate_A": 4, "candidate_B": 8, "candidate_C": 0}))
+            (r / f"iter_{n:02d}" / "selection.json").write_text(json.dumps({
+                "rule": "top3", "parents": [f"iter_{n:02d}/candidate_{c}" for c in "BAC"]}))
+            args = ["--family", "toy", "--run-dir", str(r), "--families", str(toy_families), "--round", str(n)]
+            capsys.readouterr()
+            assert select_task.main(["score-plan", *args]) == 0
+            cmds = capsys.readouterr().out.strip().splitlines()
+            assert len(cmds) == 3 and all(f"iter_{n:02d}/score/task_" in c for c in cmds)
+            plan = json.loads((r / f"iter_{n:02d}" / "score" / "plan.json").read_text())
+            assert plan["seeds"] == DEV[:3]                       # toy families file has no score_seeds
+            for j, t in enumerate(plan["tasks"]):                 # the first parent passes k of the 3 tasks
+                write_summary(Path(t["dir"]), t["id"], {c: [int(c == "candidate_A" and j < k)] * 3 for c in plan["map"]},
+                              plan["seeds"], code=False)
+            assert select_task.main(["score-pick", "--run-dir", str(r), "--round", str(n)]) == 0
+        return r
+
+    fast, slow = run_with_scores("fast", [1, 3, 3]), run_with_scores("slow", [0, 1, 2])
+    assert json.loads((fast / "iter_01" / "score" / "best.json").read_text())["macro_pass"] == 1.0
+    assert not (fast / "final").exists()
+    capsys.readouterr()
+    assert summ.main([str(fast), str(slow)]) == 0
+    out = capsys.readouterr().out
+    assert "regret against a family score of 1.000" in out
+    assert "regret 0.667 over 3 rounds, target reached in round 1" in out
+    assert "regret 2.000 over 3 rounds, target not reached" in out
+
+
+def test_real_families_have_score_seeds_apart_from_dev_and_heldout(families_doc):
+    score = set(families_doc["score_seeds"])
+    assert score and not score & set(families_doc["dev_seeds"]) and not score & set(families_doc["heldout_seeds"])
+
+
+def test_render_prompt_with_revisit(capsys):
+    capsys.readouterr()
+    assert select_task.main(["render-prompt", "--family", "goal_swap", "--arm", "probe", "--rep", "1", "--allow-revisit"]) == 0
+    text = capsys.readouterr().out
+    assert text.count("--round N --allow-revisit") == 2 and "score-pick" in text
+    with pytest.raises(SystemExit):
+        select_task.main(["render-prompt", "--family", "goal_swap", "--arm", "knn", "--rep", "1", "--allow-revisit"])

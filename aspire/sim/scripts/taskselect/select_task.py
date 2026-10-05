@@ -11,6 +11,8 @@ evaluated. The agent never writes task.json by hand.
   verify       --family F --run-dir R                   consistency of every round's task.json with the family and the eval summary
   eval-cmd     --run-dir R --round N [--gpu 0]          the exact evosearch_eval.py command for the chosen task
   init-from    --family F --run-dir R --from-run REF    copy iter_00 (same candidates, same results) from a reference run
+  score-plan   --family F --run-dir R --round N        family score of round N: its 3 parents on every family task (score seeds)
+  score-pick   --run-dir R --round N                   writes iter_NN/score/best.json (macro_pass = the family score)
   final-plan   --family F --run-dir R                   tournament: last round's 3 parents on every family task
   final-pick   --run-dir R                              macro-average winner of the tournament; writes final/best.json, final/matrix.json
   heldout-cmds --family F --run-dir R [--gpu 0]         held-out commands for the tournament winner on every family task
@@ -33,6 +35,7 @@ import core  # noqa: E402
 from core import fail  # noqa: E402
 
 RULES = ("random", "knn", "prompt", "harness", "probe")
+REVISIT_RULES = ("random", "probe")
 SCRIPT = Path(__file__).resolve()
 PROMPTS = core.HERE / "prompts"
 
@@ -117,12 +120,13 @@ def cmd_probe_plan(args: argparse.Namespace) -> int:
     plan_path = iter_dir / "probe" / "plan.json"
     if plan_path.exists():
         plan = json.loads(plan_path.read_text())
-        if plan["seeds"] != seeds or plan["code_sha256"] != code or plan["visited"] != visited:
+        if (plan["seeds"] != seeds or plan["code_sha256"] != code or plan["visited"] != visited
+                or plan["allow_revisit"] != args.allow_revisit):
             fail(f"{plan_path} was made for other seeds, candidates or history; refusing to mix probes")
     else:
         tasks = []
         for k, t in enumerate(family["tasks"]):
-            if t["id"] in visited:
+            if t["id"] in visited and not args.allow_revisit:
                 continue
             tdir = iter_dir / "probe" / f"task_{k:02d}"
             for c in committee:
@@ -130,6 +134,7 @@ def cmd_probe_plan(args: argparse.Namespace) -> int:
                 shutil.copy2(c["code_path"], tdir / c["candidate"] / "code.py")
             tasks.append({"id": t["id"], "suite": t["suite"], "task": t["task"], "dir": str(tdir)})
         plan = {"round": n, "family": family_name, "seeds": seeds, "visited": visited, "code_sha256": code,
+                "allow_revisit": args.allow_revisit,
                 "tasks": tasks, "created_at": now()}
         plan_path.write_text(json.dumps(plan, indent=2) + "\n")
     for t in plan["tasks"]:
@@ -138,8 +143,8 @@ def cmd_probe_plan(args: argparse.Namespace) -> int:
     return 0
 
 
-def read_probe(iter_dir: Path, family: dict, unvisited: list[str], kind: str) -> tuple[dict[str, float], int]:
-    """Probe scores of every unvisited task, after checking the probe measured the current candidates."""
+def read_probe(iter_dir: Path, pool: list[str], kind: str) -> tuple[dict[str, float], int]:
+    """Probe scores of every task in the pool, after checking the probe measured the current candidates."""
     plan_path = iter_dir / "probe" / "plan.json"
     if not plan_path.exists():
         fail(f"{plan_path} missing: run probe-plan and its commands first")
@@ -147,8 +152,8 @@ def read_probe(iter_dir: Path, family: dict, unvisited: list[str], kind: str) ->
     code = {c["candidate"]: core.file_sha256(Path(c["code_path"])) for c in committee_of(iter_dir)}
     if plan["code_sha256"] != code:
         fail("candidates changed after the probe was planned; the probe no longer describes them")
-    if [t["id"] for t in plan["tasks"]] != unvisited:
-        fail("probe plan does not cover exactly the unvisited tasks")
+    if [t["id"] for t in plan["tasks"]] != pool:
+        fail("probe plan does not cover exactly the tasks this round may select")
     scores, trials = {}, 0
     for t in plan["tasks"]:
         d = Path(t["dir"])
@@ -181,22 +186,31 @@ def cmd_select(args: argparse.Namespace) -> int:
         unknown = [t for t in visited if t not in ids]
         if unknown:
             fail(f"history contains tasks outside family {family_name}: {unknown}")
-        if len(set(visited)) != len(visited):
+        rule, revisit = args.rule, args.allow_revisit
+        if revisit and rule not in REVISIT_RULES:
+            fail(f"--allow-revisit is supported for rules {REVISIT_RULES} only")
+        if not revisit and len(set(visited)) != len(visited):
             fail(f"a task was evaluated twice: {visited}")
         unvisited = [t for t in ids if t not in visited]
-        if not unvisited:
+        if not revisit and not unvisited:
             fail("family exhausted: every task is already visited")
-        rule = args.rule
+        record["allow_revisit"] = revisit
+
+        def random_pick() -> str:
+            if revisit:
+                return core.pick_random_any(family_name, ids, args.salt, n)
+            return core.pick_random(family_name, ids, visited, args.salt)
+
         if rule == "random":
-            chosen = core.pick_random(family_name, ids, visited, args.salt)
+            chosen = random_pick()
             record["salt"] = args.salt
         elif rule == "probe":
-            scores, n_trials = read_probe(iter_dir, family, unvisited, args.probe_score)
+            scores, n_trials = read_probe(iter_dir, ids if revisit else unvisited, args.probe_score)
             record.update({"scores": scores, "probe_score": args.probe_score, "probe_trials": n_trials, "salt": args.salt})
             if max(scores.values()) > 0:
                 chosen = core.argmax_in_order(scores, ids)
             else:
-                chosen = core.pick_random(family_name, ids, visited, args.salt)
+                chosen = random_pick()
                 record["fallback"] = "random: no pass/fail split on any probed task"
         elif rule == "knn":
             descriptors = {t["id"]: core.describe(t, descriptors_dir) for t in family["tasks"]}
@@ -269,7 +283,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
     ids = core.task_ids(family)
     problems: list[str] = []
     seen: dict[str, int] = {}
-    rules, salts = set(), set()
+    rules, salts, revisits = set(), set(), set()
     iters = sorted((d for d in run_dir.glob("iter_[0-9][0-9]")), key=core.round_number)
     if not iters:
         fail(f"no iter_NN directories in {run_dir}")
@@ -287,7 +301,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
             problems.append(f"{d.name}: task.json round/family mismatch ({rec.get('round')}, {rec.get('family')})")
         if rec.get("task_id") not in ids:
             problems.append(f"{d.name}: task {rec.get('task_id')} is not in family {family_name}")
-        if rec.get("task_id") in seen:
+        if rec.get("allow_revisit"):
+            revisits.add(n)
+        elif rec.get("task_id") in seen:
             problems.append(f"{d.name}: task {rec['task_id']} already used in iter_{seen[rec['task_id']]:02d}")
         seen[rec.get("task_id")] = n
         if n == 0 and rec.get("task_id") != family["round0"]:
@@ -309,6 +325,9 @@ def cmd_verify(args: argparse.Namespace) -> int:
             if sorted(s["trial_seeds"]) != sorted(doc["dev_seeds"]):
                 problems.append(f"{d.name}: evaluated on seeds {sorted(s['trial_seeds'])}, expected {doc['dev_seeds']}")
         expected_visited.append(rec.get("task_id"))
+    selected = {core.round_number(d) for d in iters if core.round_number(d) > 0 and (d / "task.json").exists()}
+    if revisits and revisits != selected:
+        problems.append(f"only rounds {sorted(revisits)} allowed revisits; a run must use one setting")
     if len(rules) > 1:
         problems.append(f"rounds used different rules: {sorted(map(str, rules))}")
     if len(salts) > 1:
@@ -359,19 +378,27 @@ def _letters(n: int) -> list[str]:
     return [f"candidate_{chr(ord('A') + i)}" for i in range(n)]
 
 
+def _tournament_dir(run_dir: Path, round_idx: int | None) -> Path:
+    """final/ for the end-of-run tournament, iter_NN/score/ for the family score of one round."""
+    return run_dir / "final" if round_idx is None else run_dir / f"iter_{round_idx:02d}" / "score"
+
+
 def cmd_final_plan(args: argparse.Namespace) -> int:
     doc, family_name, family = load_family(args)
     run_dir = Path(args.run_dir).resolve()
     rounds = core.finished_rounds(run_dir)
     if not rounds:
         fail(f"no finished rounds in {run_dir}")
-    last = rounds[-1]
+    last = rounds[-1] if args.round is None else run_dir / f"iter_{args.round:02d}"
+    if last not in rounds:
+        fail(f"{last} is not a finished round")
     selection = last / "selection.json"
     if not selection.exists():
         fail(f"{selection} missing: run scripts/tc1/select_parents.py select --rule top3 --iter-dir {last}")
     parents = json.loads(selection.read_text())["parents"]
-    seeds = [int(s) for s in (args.seeds or doc["dev_seeds"][:3])]
-    final = run_dir / "final"
+    default = doc["dev_seeds"][:3] if args.round is None else doc.get("score_seeds", doc["dev_seeds"][:3])
+    seeds = [int(s) for s in (args.seeds or default)]
+    final = _tournament_dir(run_dir, args.round)
     plan_path = final / "plan.json"
     if plan_path.exists():
         old = json.loads(plan_path.read_text())
@@ -399,10 +426,10 @@ def cmd_final_plan(args: argparse.Namespace) -> int:
 
 def cmd_final_pick(args: argparse.Namespace) -> int:
     run_dir = Path(args.run_dir).resolve()
-    final = run_dir / "final"
+    final = _tournament_dir(run_dir, args.round)
     plan_path = final / "plan.json"
     if not plan_path.exists():
-        fail(f"{plan_path} missing: run final-plan first")
+        fail(f"{plan_path} missing: run final-plan (or score-plan) first")
     plan = json.loads(plan_path.read_text())
     outcomes: dict[str, dict[str, list[int]]] = {}
     missing = []
@@ -492,7 +519,12 @@ def cmd_render_prompt(args: argparse.Namespace) -> int:
     arm_file = PROMPTS / f"arm_{args.arm}.md"
     if not arm_file.exists():
         fail(f"no arm instructions {arm_file}; arms: {[p.stem[4:] for p in sorted(PROMPTS.glob('arm_*.md'))]}")
-    text = base.replace("{{ARM_SECTION}}", arm_file.read_text())
+    arm_text = arm_file.read_text()
+    if args.allow_revisit:
+        if args.arm not in REVISIT_RULES:
+            fail(f"--allow-revisit is supported for arms {REVISIT_RULES} only")
+        arm_text = arm_text.replace("--round N", "--round N --allow-revisit")
+    text = base.replace("{{ARM_SECTION}}", arm_text)
     values = {"FAMILY": family_name, "ARM": args.arm, "REP": str(args.rep), "RELATION": family["relation"],
               "N_TASKS": str(len(family["tasks"])), "ROUND0": family["round0"],
               "REF_RUN": args.ref_run or "none (this run writes iter_00 and is the reference run)",
@@ -526,8 +558,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--proxy", help="harness rule: proxy.py")
     s.add_argument("--unlock", action="store_true", help="harness rule: accept a changed proxy (logged)")
     s.add_argument("--probe-score", choices=core.PROBE_SCORES, default="split", help="probe rule: how a probed task is scored")
+    s.add_argument("--allow-revisit", action="store_true", help="random/probe: a task may be selected again")
     pp = sub.add_parser("probe-plan"); common(pp, rnd=True)
-    pp.add_argument("--probe-seeds", type=int, default=1); pp.add_argument("--gpu", default="0"); pp.add_argument("--parallel", default="2")
+    pp.add_argument("--allow-revisit", action="store_true"); pp.add_argument("--probe-seeds", type=int, default=1); pp.add_argument("--gpu", default="0"); pp.add_argument("--parallel", default="2")
     c = sub.add_parser("context"); common(c, rnd=True)
     v = sub.add_parser("verify"); common(v)
     e = sub.add_parser("eval-cmd"); common(e, family=False, rnd=True)
@@ -536,18 +569,23 @@ def build_parser() -> argparse.ArgumentParser:
     i.add_argument("--from-run", required=True)
     f = sub.add_parser("final-plan"); common(f)
     f.add_argument("--seeds", type=int, nargs="+"); f.add_argument("--gpu", default="0"); f.add_argument("--parallel", default="2")
-    fp = sub.add_parser("final-pick"); common(fp, family=False)
+    f.set_defaults(round=None)
+    fp = sub.add_parser("final-pick"); common(fp, family=False); fp.set_defaults(round=None)
+    sc = sub.add_parser("score-plan"); common(sc, rnd=True)
+    sc.add_argument("--seeds", type=int, nargs="+"); sc.add_argument("--gpu", default="0"); sc.add_argument("--parallel", default="2")
+    sk = sub.add_parser("score-pick"); common(sk, family=False, rnd=True)
     hc = sub.add_parser("heldout-cmds"); common(hc); hc.add_argument("--gpu", default="0")
     hs = sub.add_parser("heldout-summary"); common(hs)
     r = sub.add_parser("render-prompt")
     r.add_argument("--family", required=True); r.add_argument("--families")
     r.add_argument("--arm", choices=RULES, required=True); r.add_argument("--rep", type=int, required=True)
-    r.add_argument("--ref-run")
+    r.add_argument("--ref-run"); r.add_argument("--allow-revisit", action="store_true")
     return p
 
 
 COMMANDS = {"probe-plan": cmd_probe_plan, "select": cmd_select, "context": cmd_context, "verify": cmd_verify, "eval-cmd": cmd_eval_cmd,
             "init-from": cmd_init_from, "final-plan": cmd_final_plan, "final-pick": cmd_final_pick,
+            "score-plan": cmd_final_plan, "score-pick": cmd_final_pick,
             "heldout-cmds": cmd_heldout_cmds, "heldout-summary": cmd_heldout_summary,
             "render-prompt": cmd_render_prompt}
 

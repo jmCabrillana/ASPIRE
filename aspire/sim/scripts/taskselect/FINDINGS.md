@@ -53,9 +53,11 @@ All results are from one family (`goal_swap`, 10 tasks) and 8 programs that we d
 ## New goal: fewer rounds
 
 - We compare methods by regret, not by the split score.
-- After each round, we measure the family score. This costs about 50 trials.
+- After each round, we measure the family score: the 3 parents on all tasks, on seeds 71 to 73 (`score-plan`, `score-pick`).
+  For 10 tasks this is 90 trials.
 - We report the regret and the number of rounds to get to a target score.
-- A method can select the same task again. The current tools do not permit this.
+- A method can select the same task again (`--allow-revisit`, for the random rule and the probe rule).
+- `summarize_family_run.py` prints the regret and the round that gets to the target.
 - We do not know the best possible score. We compare each method with the best method that we ran.
 
 ## Where the idea fits

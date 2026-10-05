@@ -15,6 +15,7 @@ seeds 51-65, parents chosen by `scripts/tc1/select_parents.py`, skill library fr
 round 0   task = family.round0 (fixed, identical in every arm)      candidates: 8 general programs
           eval 8 candidates on it, dev seeds 51-65                   (scripts/libero/evosearch_eval.py)
 round N   parents_{N-1} = select_parents.py top3                     (unchanged)
+          family score of round N-1: its 3 parents on every task, score seeds (score-plan / score-pick)
           candidates_N written from the parents, using the traces of ALL tasks visited so far
           task_N = select_task(rule, history, candidates_N)         <- NEW: judges the programs about to be evaluated
           eval candidates_N on task_N, dev seeds 51-65
@@ -102,14 +103,17 @@ program fitted on the visited tasks; similarity to tasks that already split the 
   reference run and records the provenance.
 * Same model (`claude-sonnet-5`), K, dev seeds, rounds, parent rule, frozen skill library, isolation rules as the TC1 runs.
 * The random arm uses the same pipeline; only the task choice differs.
-* No task is evaluated twice in one run (selection is without replacement; `verify` enforces it).
+* No task is evaluated twice in one run (selection is without replacement; `verify` enforces it), unless the whole run uses
+  `--allow-revisit` (random and probe rules only).
+* The family score uses seeds 71-73, apart from dev (51-65) and held-out (1-10). Nobody reads it during a run.
 * Repetitions: at least 3 per arm per family (the LLM-generated candidates are the dominant variance).
 * Leakage: a harness proxy is designed from rounds the arm has already seen and then frozen. For offline backtests the
   proxy is designed on a split of the tasks and tested on the rest.
 
 ## Metrics and comparison
 
-Per run: realised `D_prog` / `D_seed` of each round's task; best and mean dev pass rate per round; final tournament
+Per run: the family score after each round and the regret against a target score (headline; `summarize_family_run.py`);
+realised `D_prog` / `D_seed` of each round's task; best and mean dev pass rate per round; final tournament
 macro-average; held-out macro-average over the family. Per arm pair: paired differences over repetitions with a bootstrap
 confidence interval; the headline is final held-out macro-average and rounds to reach a target, **not** realised
 disagreement alone (selecting disagreeing tasks is only worthwhile if the programs improve).
@@ -123,7 +127,7 @@ orders (many random draws) and the oracle. Reported: mean, bootstrap CI, fractio
 |---|---|
 | `make_families.py`, `families.json` | family definitions, validated against LIBERO |
 | `core.py` | history loading, metrics, rules, proxy sandbox (standard library only) |
-| `select_task.py` | `select`, `context`, `verify`, `eval-cmd`, `init-from`, `final-plan`, `final-pick`, `heldout-cmds`, `heldout-summary`, `render-prompt` |
+| `select_task.py` | `select`, `probe-plan`, `context`, `verify`, `eval-cmd`, `init-from`, `score-plan`, `score-pick`, `final-plan`, `final-pick`, `heldout-cmds`, `heldout-summary`, `render-prompt` |
 | `backtest.py` | offline selector comparison on an outcome matrix (or a synthetic one), incl. probe rules with held-out seeds |
 | `run_matrix.py` | evaluates one candidate set on every family task: the outcome matrix |
 | `score_predictions.py` | scores predicted pass probabilities against a matrix (Brier, AUC, pick quality) |

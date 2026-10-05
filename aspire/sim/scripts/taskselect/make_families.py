@@ -14,6 +14,7 @@ from pathlib import Path
 
 DEV_SEEDS = list(range(51, 66))
 HELDOUT_SEEDS = list(range(1, 11))
+SCORE_SEEDS = [71, 72, 73]      # family score after each round; never shown to the candidate writer
 
 BOWL = "put_the_bowl_on_the_stove"
 # The with_* suites rename the task with their scene prefix (and some move it to another scene).
@@ -128,7 +129,8 @@ def main() -> int:
             suites[suite] = {ts.get_task(i).name: ts.get_task(i).language for i in range(ts.n_tasks)}
         return suites[suite]
 
-    out = {"schema_version": 1, "dev_seeds": DEV_SEEDS, "heldout_seeds": HELDOUT_SEEDS, "families": {}}
+    out = {"schema_version": 1, "dev_seeds": DEV_SEEDS, "heldout_seeds": HELDOUT_SEEDS,
+           "score_seeds": SCORE_SEEDS, "families": {}}
     for name, spec in FAMILIES.items():
         pairs = list(spec.get("pairs", []))
         for suite, sel in spec.get("suites", {}).items():

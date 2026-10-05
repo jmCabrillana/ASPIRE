@@ -29,6 +29,11 @@
     9,
     10
   ],
+  "score_seeds": [
+    71,
+    72,
+    73
+  ],
   "families": {
     "goal_swap": {
       "relation": "medium",
