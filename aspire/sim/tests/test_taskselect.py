@@ -905,3 +905,33 @@ def test_backtest_trace_rules_need_and_use_signatures():
     picks = rep["rules"]["probe_trace"]["picks"]
     assert sum("stove" in p for p in picks) == 4                 # the all-fail tasks whose traces differ are all selected
     assert rep["rules"]["probe_trace"]["cumulative"] >= rep["rules"]["probe"]["cumulative"]
+
+
+def test_render_trace_is_compact(tmp_path):
+    d = write_trial(tmp_path, "candidate_A", 51, ["goto_pose", "goto_pose", "goto_pose", ("close_gripper", 0.015),
+                                                   ("get_observation", 0.015), "open_gripper"])
+    text = core.render_trace(d).splitlines()
+    assert text[0] == "goto_pose x3" and text[1] == "close_gripper: width 0.015"
+    assert text[2] == "observe: hand at (0.000, 0.000, 0.000), gripper 0.015" and len(text) == 4
+
+
+def test_stage_predictions_are_scored_against_signatures():
+    spec = importlib.util.spec_from_file_location("score_predictions", ROOT / "scripts/taskselect/score_predictions.py")
+    sp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sp)
+    tasks = [{"id": f"s/t{i}"} for i in range(3)]
+    sig = {"s/t0": {"A": ["air|", "air|"], "B": ["released|", "released|"]},
+           "s/t1": {"A": ["air|", "pass|"], "B": ["released|", "released|"]},
+           "s/t2": {"A": ["air|", "air|"], "B": ["air|", "air|"]}}
+    matrix = {"tasks": tasks, "candidates": ["A", "B"], "signatures": sig}
+    pred = {"s/t1": {"A": {"p_pass": 0.5, "stage": "air"}, "B": {"p_pass": 0.1, "stage": "released"}},
+            "s/t2": {"A": {"p_pass": 0.0, "stage": "air"}, "B": {"p_pass": 0.0, "stage": "released"}}}
+    probs, stages = sp.split_entries(pred)
+    assert probs["s/t1"] == {"A": 0.5, "B": 0.1} and sp.split_entries(probs) == (probs, None)
+    s = sp.score_stages(matrix, stages, {"s/t0"})
+    assert s["stage_accuracy"] == pytest.approx(5 / 8)            # t1: 3 of 4 trials, t2: 2 of 4
+    assert s["stage_accuracy_most_frequent"] == pytest.approx(5 / 8)      # "air" everywhere
+    assert s["stage_accuracy_carry_over"] == pytest.approx(5 / 8)         # A air, B released, as on t0
+    stages["s/t2"]["B"] = "flying"
+    with pytest.raises(SystemExit):
+        sp.score_stages(matrix, stages, {"s/t0"})

@@ -56,6 +56,28 @@ The trace score of a task is high when the 8 programs get to different stages.
 - The stages are for grasp tasks. For a push task, a closed hand is correct, but the stage says "closed on air".
 - We did not show that a high trace score makes the next programs better.
 
+## Results with a hypothesis ledger
+
+The model reads the programs and all traces of one task. It writes hypotheses about causes. Then it predicts the
+other 9 tasks. A control gets the same files but writes no hypotheses. Each condition has 2 runs.
+
+| question | ledger | no ledger |
+|---|---|---|
+| Ranking score (AUC) for pass or fail | 0.69 and 0.90 | 0.59 and 0.75 |
+| Error (Brier). Always "fail" gives 0.067. | 0.074 and 0.052 | 0.076 and 0.075 |
+| Correct stage. Always "closed on air" gives 0.62. | 0.54 and 0.61 | 0.49 and 0.64 |
+| Rank of the task that it selects by trace score, of 9 | 4 and 2 | 4 and 4 |
+
+- The hypotheses are sensible. Both runs find that the bowl is wider than the gripper. The fix loop found the same cause.
+- The ledger is not clearly better than no ledger. Two runs for each condition are too few.
+- The two runs of the same condition differ a lot. One ledger alone is not reliable.
+- The model does not predict the stage better than the simple rule.
+- The ledger knows what it did not measure: drawers, the knob, the push, the bottle. Its errors are there.
+  Example: one program opens the drawer on 4 of 5 seeds. The model said 0.12 to 0.30.
+- Our selection rule has a fault. It selects the push task 3 times of 4, but all programs fail there.
+  The model is not sure that a push works, and all programs push the same way. This is doubt about the world.
+  It is not a difference between programs. The rule must keep the two apart.
+
 ## What the results show
 
 - Prediction from code does not work for the first round. Measurement works.
