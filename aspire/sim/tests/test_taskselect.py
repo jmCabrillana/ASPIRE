@@ -828,3 +828,80 @@ def test_render_prompt_with_revisit(capsys):
     assert text.count("--round N --allow-revisit") == 2 and "score-pick" in text
     with pytest.raises(SystemExit):
         select_task.main(["render-prompt", "--family", "goal_swap", "--arm", "knn", "--rep", "1", "--allow-revisit"])
+
+
+def write_trial(task_dir: Path, cand: str, seed: int, calls: list, passed: bool = False, stdout: str = "") -> Path:
+    """A trial directory as evosearch_eval.py saves it: trace.json (API calls) and summary.txt."""
+    d = task_dir / cand / "eval" / f"trial_{seed:02d}_sandboxrc_0_reward_{float(passed):.3f}_taskcompleted_{int(passed)}"
+    d.mkdir(parents=True)
+    trace = []
+    for c in calls:
+        fn, value = (c, None) if isinstance(c, str) else c
+        result = {"gripper_width": value} if fn == "close_gripper" else (
+            {"robot_cartesian_pos": [0, 0, 0, 1, 0, 0, 0, value]} if fn == "get_observation" and value is not None else {})
+        trace.append({"function": fn, "result": result})
+    (d / "trace.json").write_text(json.dumps(trace))
+    (d / "summary.txt").write_text(f"Environment response:\n  Sandbox failed: 0\n  Stdout: {stdout}\n  Stderr: \n")
+    return d
+
+
+AIR = ["get_observation", "goto_pose", ("close_gripper", 0.015), "goto_pose"]
+HELD_RELEASED = ["goto_pose", ("close_gripper", 0.33), "goto_pose", "open_gripper"]
+
+
+@pytest.mark.parametrize("calls, passed, stdout, expected", [
+    (["get_observation"], False, "[locate] not found: bowl", "no_motion|locate:not found"),
+    (["goto_pose", "goto_pose"], False, "", "no_close|"),
+    (AIR, False, "[pick] no held grasp found\n[run] place failed: RuntimeError", "air|pick:no held grasp found;run:place failed"),
+    (["goto_pose", ("close_gripper", 0.2), ("get_observation", 0.01)], False, "", "slip|"),
+    (["goto_pose", ("close_gripper", 0.2), ("get_observation", 0.2)], False, "", "held_end|"),
+    (HELD_RELEASED, False, "", "released|"),
+    (AIR, True, "", "pass|"),
+])
+def test_trial_signature_stages(tmp_path, calls, passed, stdout, expected):
+    assert core.trial_signature(write_trial(tmp_path, "candidate_A", 51, calls, passed, stdout)) == expected
+
+
+def test_trace_score_hand_computed_and_load_signatures(tmp_path):
+    sigs = {"A": ["air|", "air|"], "B": ["air|", "released|"], "C": ["air|", "pass|"], "D": ["air|", "pass|"]}
+    assert core.trace_score(sigs, "trace") == pytest.approx((0.0 + 1.5) / 2)          # seed 2: 1/4, 1/4, 1/2
+    gaps = (3 + 4 + 4 + 1 + 1 + 0) / (6 * 6)                                          # stages 2, 5, 6, 6
+    assert core.trace_score(sigs, "progress") == pytest.approx(gaps / 2, abs=1e-5)
+    with pytest.raises(SystemExit):
+        core.trace_score(sigs, "split")
+    write_trial(tmp_path, "candidate_A", 51, AIR)
+    write_trial(tmp_path, "candidate_A", 52, HELD_RELEASED)
+    assert core.load_signatures(tmp_path, ["candidate_A"], [51, 52]) == {"candidate_A": ["air|", "released|"]}
+    with pytest.raises(SystemExit):
+        core.load_signatures(tmp_path, ["candidate_A"], [51, 53])
+
+
+def test_trace_probe_selects_an_all_fail_task_that_the_pass_fail_probe_cannot_see(run_dir, goal, capsys):
+    plan, _ = probe_setup(run_dir, capsys)
+    target = plan["tasks"][4]
+    for t in plan["tasks"]:
+        d = Path(t["dir"])
+        write_summary(d, t["id"], {"candidate_A": [0], "candidate_B": [0]}, [51], code=False)   # every program fails
+        write_trial(d, "candidate_A", 51, AIR)
+        write_trial(d, "candidate_B", 51, HELD_RELEASED if t is target else AIR)                # one got further
+    assert run_select(run_dir, 1, "probe", "--probe-score", "trace", "--salt", "r1") == 0
+    rec = json.loads((run_dir / "iter_01" / "task.json").read_text())
+    assert rec["task_id"] == target["id"] and "fallback" not in rec and rec["probe_score"] == "trace"
+    assert rec["scores"][target["id"]] == 1.0 and sum(rec["scores"].values()) == 1.0
+    (run_dir / "iter_01" / "task.json").unlink()
+    assert run_select(run_dir, 1, "probe", "--probe-score", "split", "--salt", "r1") == 0       # pass/fail sees nothing
+    assert "fallback" in json.loads((run_dir / "iter_01" / "task.json").read_text())
+
+
+def test_backtest_trace_rules_need_and_use_signatures():
+    matrix = backtest.make_synthetic(seed=0)
+    with pytest.raises(SystemExit):
+        backtest.backtest(matrix, ["probe_trace"], budget=3, draws=5)
+    matrix["signatures"] = {
+        t: {n: [("pass|" if y else ("released|" if "stove" in t and n < "candidate_E" else "air|")) for y in row]
+            for n, row in o.items()} for t, o in matrix["outcomes"].items()}
+    rep = backtest.backtest(matrix, ["probe", "probe_trace"], budget=9, draws=100, metric="trace")
+    assert rep["metric"] == "trace"
+    picks = rep["rules"]["probe_trace"]["picks"]
+    assert sum("stove" in p for p in picks) == 4                 # the all-fail tasks whose traces differ are all selected
+    assert rep["rules"]["probe_trace"]["cumulative"] >= rep["rules"]["probe"]["cumulative"]

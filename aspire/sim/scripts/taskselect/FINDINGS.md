@@ -38,6 +38,24 @@ All results are from one family (`goal_swap`, 10 tasks) and 8 programs that we d
 | Is "most splits" different from "pass rate near 50%"? | No. The two rules select the same tasks here. |
 | Did the fix loop solve the task "bowl on stove"? | No. 0 of 50 seeds pass. The final code is the same as the first code. |
 
+## Results with traces
+
+Pass or fail is one bit. A trace shows more: how far the program got. We reduce each trial to a stage:
+no motion, no grasp attempt, closed on air, object lost, object held, object released, pass.
+The trace score of a task is high when the 8 programs get to different stages.
+
+| question | result |
+|---|---|
+| Does the trace score separate the 5 tasks where all programs fail? | Yes. Wine bottle on rack 1.11, cream cheese 0.65, top drawer 0.43, turn on stove 0.33, push plate 0.00. |
+| Does it agree with the split score on the other tasks? | Yes. The rank correlation of the two scores is 0.92. |
+| Is one seed sufficient? | Yes. The rank correlation between one seed and the other four seeds is 0.73 to 0.90. |
+| What changes in the selection? | After the tasks with a split, the split probe selects a random task. The trace probe selects wine bottle on rack. |
+| Is the trace probe better than random? | For the trace score in 5 rounds: 5.69 against 3.74. With the split score, the two probes are equal (1.87). |
+
+- On wine bottle on rack, 5 programs hold and release the bottle and 3 programs close on air. No program passes.
+- The stages are for grasp tasks. For a push task, a closed hand is correct, but the stage says "closed on air".
+- We did not show that a high trace score makes the next programs better.
+
 ## What the results show
 
 - Prediction from code does not work for the first round. Measurement works.

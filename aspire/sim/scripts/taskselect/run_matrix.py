@@ -5,7 +5,8 @@
       --candidates outputs/family_matrix/goal_swap/iter_00 --seeds 51 52 53 54 55 [--gpu 0] [--parallel 2]
 
 Runs scripts/libero/evosearch_eval.py once per task (sequential, resumable: finished tasks are skipped) under
-<candidates>/../matrix/task_KK/, then writes matrix/matrix.json (the format backtest.py reads) and prints the table.
+<candidates>/../matrix/task_KK/, then writes matrix/matrix.json (the format backtest.py reads, with the trace
+signature of every trial) and prints the table.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     env = dict(os.environ, MUJOCO_GL="egl", TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="1")
     env.pop("ANTHROPIC_API_KEY", None)
 
-    outcomes = {}
+    outcomes, signatures = {}, {}
     for k, t in enumerate(family["tasks"]):
         tdir = root / f"task_{k:02d}"
         if not (tdir / "iter_summary.json").exists():
@@ -63,18 +64,19 @@ def main(argv: list[str] | None = None) -> int:
         if r["task_id"] != t["id"] or r["seeds"] != seeds or sorted(r["outcomes"]) != names:
             fail(f"{tdir} holds results for another task, seed set or candidate set; remove it to re-run")
         outcomes[t["id"]] = r["outcomes"]
+        signatures[t["id"]] = core.load_signatures(tdir, names, seeds)
 
     (root / "matrix.json").write_text(json.dumps({
         "family": args.family, "round0": family["round0"], "seeds": seeds, "candidates": names,
         "tasks": [{k: t[k] for k in ("id", "suite", "task", "language_static")} for t in family["tasks"]],
-        "outcomes": outcomes}, indent=2) + "\n")
+        "outcomes": outcomes, "signatures": signatures}, indent=2) + "\n")
 
     short = [n.removeprefix("candidate_") for n in names]
-    print(f"\npasses out of {len(seeds)} seeds   " + "  ".join(short) + "   D_seed D_prog mixed")
+    print(f"\npasses out of {len(seeds)} seeds   " + "  ".join(short) + "   D_seed  trace  progress")
     for t in family["tasks"]:
-        o, m = outcomes[t["id"]], core.committee_metrics(outcomes[t["id"]])
+        o, m, sig = outcomes[t["id"]], core.committee_metrics(outcomes[t["id"]]), signatures[t["id"]]
         print(f"{t['task'][:30]:30s}  " + "  ".join(str(sum(o[n])) for n in names)
-              + f"   {m['D_seed']:.3f}  {m['D_prog']:.3f}  {m['mixed_seed_frac']:.2f}")
+              + f"   {m['D_seed']:.3f}  {core.trace_score(sig, 'trace'):.3f}  {core.trace_score(sig, 'progress'):.3f}")
     print(f"wrote {root / 'matrix.json'}")
     return 0
 

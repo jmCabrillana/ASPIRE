@@ -162,7 +162,10 @@ def read_probe(iter_dir: Path, pool: list[str], kind: str) -> tuple[dict[str, fl
         r = core.load_round(d)
         if r["task_id"] != t["id"] or r["seeds"] != sorted(plan["seeds"]) or sorted(r["outcomes"]) != sorted(code):
             fail(f"{d}: probe results do not match the plan (task, seeds or candidates)")
-        scores[t["id"]] = core.probe_score(r["outcomes"], kind)
+        if kind in core.TRACE_SCORES:
+            scores[t["id"]] = core.trace_score(core.load_signatures(d, sorted(code), r["seeds"]), kind)
+        else:
+            scores[t["id"]] = core.probe_score(r["outcomes"], kind)
         trials += len(r["outcomes"]) * len(r["seeds"])
     return scores, trials
 
@@ -524,6 +527,10 @@ def cmd_render_prompt(args: argparse.Namespace) -> int:
         if args.arm not in REVISIT_RULES:
             fail(f"--allow-revisit is supported for arms {REVISIT_RULES} only")
         arm_text = arm_text.replace("--round N", "--round N --allow-revisit")
+    if args.probe_score != "split":
+        if args.arm != "probe":
+            fail("--probe-score applies to the probe arm only")
+        arm_text = arm_text.replace("--rule probe", f"--rule probe --probe-score {args.probe_score}")
     text = base.replace("{{ARM_SECTION}}", arm_text)
     values = {"FAMILY": family_name, "ARM": args.arm, "REP": str(args.rep), "RELATION": family["relation"],
               "N_TASKS": str(len(family["tasks"])), "ROUND0": family["round0"],
@@ -557,7 +564,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--choice", help="prompt rule: task_choice.json (default iter_NN/task_choice.json)")
     s.add_argument("--proxy", help="harness rule: proxy.py")
     s.add_argument("--unlock", action="store_true", help="harness rule: accept a changed proxy (logged)")
-    s.add_argument("--probe-score", choices=core.PROBE_SCORES, default="split", help="probe rule: how a probed task is scored")
+    s.add_argument("--probe-score", choices=core.PROBE_SCORES + core.TRACE_SCORES, default="split",
+                   help="probe rule: how a probed task is scored (trace/progress read the trial traces)")
     s.add_argument("--allow-revisit", action="store_true", help="random/probe: a task may be selected again")
     pp = sub.add_parser("probe-plan"); common(pp, rnd=True)
     pp.add_argument("--allow-revisit", action="store_true"); pp.add_argument("--probe-seeds", type=int, default=1); pp.add_argument("--gpu", default="0"); pp.add_argument("--parallel", default="2")
@@ -580,6 +588,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--family", required=True); r.add_argument("--families")
     r.add_argument("--arm", choices=RULES, required=True); r.add_argument("--rep", type=int, required=True)
     r.add_argument("--ref-run"); r.add_argument("--allow-revisit", action="store_true")
+    r.add_argument("--probe-score", choices=core.PROBE_SCORES + core.TRACE_SCORES, default="split")
     return p
 
 

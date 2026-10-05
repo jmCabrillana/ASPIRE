@@ -72,6 +72,13 @@ For a task with committee outcomes `o[i][s]` in {0,1} (candidate i, dev seed s),
 Why `D_seed` is primary: trials are deterministic per seed (replays reproduce outcomes exactly), so a seed where some
 candidates pass and others fail is a real contrast for the next round, and `D_prog` misses it when pass rates are equal.
 
+### Trace-level disagreement
+
+`core.trial_signature` reduces a trial to `<stage>|<tags>` from its API trace and printed output only (no simulator state).
+Stage: no motion, moved without closing, closed on air, held then lost, holding at the end, held and released, pass.
+`trace` = entropy (bits) of the candidates' signatures on a seed, mean over seeds. `progress` = mean pairwise gap in stage.
+The stages are grasp-centred: for push or knob tasks a deliberate closed fist reads as `air`, so prefer `trace` there.
+
 ## Selectors (the arms)
 
 All write `iter_NN/task.json` through `scripts/taskselect/select_task.py`; the agent never edits `task.json`.
@@ -82,7 +89,7 @@ All write `iter_NN/task.json` through `scripts/taskselect/select_task.py`; the a
 | `prompt` | the coordinator LLM writes `iter_NN/task_choice.json` (task, predicted pass probability per candidate, rationale); the script validates and records it | committee programs, traces of visited tasks, perception-only descriptors of unvisited tasks |
 | `harness` | the coordinator LLM writes a **proxy** `proxy.py` (a scoring function); the script runs it in a subprocess, takes the argmax over unvisited tasks, records every score | same inputs as `prompt`; the proxy file is hashed and locked (`proxy.lock.json`) so it cannot drift between rounds without `--unlock` being logged |
 | `knn` | script, no LLM: Jaccard-similarity-weighted `D_prog` of visited tasks plus an exploration bonus (0.25 x distance to everything visited) | task descriptors + history; a simple non-LLM reference arm and backtest baseline, not the contribution |
-| `probe` | script, from measurement: `probe-plan` runs the round's candidates on the first dev seed of every unvisited task; the task with the largest per-seed split wins (random fallback if nothing splits) | costs K x unvisited tasks trials per round, recorded in `task.json` |
+| `probe` | script, from measurement: `probe-plan` runs the round's candidates on the first dev seed of every unvisited task; the task with the highest `--probe-score` wins (random fallback if all scores are zero). Scores: `split` (pass/fail, default), `regret`, `learnability`, and `trace` / `progress`, which read each trial's API trace and so also rank tasks where every program fails | costs K x unvisited tasks trials per round, recorded in `task.json` |
 | `oracle` | backtest only: picks the truly most-disagreeing task from a known outcome matrix | upper bound, not an online arm |
 
 Descriptors are **perception-only**: the runtime instruction (`env.handle.task_language`) plus the reset-frame images
