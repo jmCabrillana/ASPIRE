@@ -69,6 +69,21 @@ FAMILIES: dict[str, dict] = {
             "KITCHEN_SCENE10_put_the_chocolate_pudding_in_the_top_drawer_of_the_cabinet_and_close_it",
         ]],
     },
+    "library_9": {
+        "relation": "weak",
+        "description": "Library-build experiment: three short tasks from each of the goal, spatial and object suites.",
+        "pairs": [
+            ("libero_goal", "open_the_middle_drawer_of_the_cabinet"),
+            ("libero_goal", "put_the_bowl_on_the_stove"),
+            ("libero_goal", "turn_on_the_stove"),
+            ("libero_spatial", "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate"),
+            ("libero_spatial", "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate"),
+            ("libero_spatial", "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate"),
+            ("libero_object", "pick_up_the_alphabet_soup_and_place_it_in_the_basket"),
+            ("libero_object", "pick_up_the_cream_cheese_and_place_it_in_the_basket"),
+            ("libero_object", "pick_up_the_salad_dressing_and_place_it_in_the_basket"),
+        ],
+    },
     "three_suites": {
         "relation": "weak",
         "description": "Four short tasks from each of the goal, object and spatial swap suites "

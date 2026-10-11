@@ -46,6 +46,7 @@ itself.
 | `spatial_swap` | strong | 10 | same object and goal; the spatial referring expression | disagreement from relational perception, not manipulation |
 | `goal_swap` | medium | 10 | one scene; ten goals, different skills | main headline family: shared perception, partly shared skills |
 | `drawer_ladder` | medium | 9 | drawer skills of growing composition length over two scenes | disagreement should rise with composition length; long tasks may all-fail |
+| `library_9` | weak | 9 | three short tasks each from libero_goal, libero_spatial, libero_object | the library-build experiment (`library_loop.py`) |
 | `three_suites` | weak | 12 | three scenes (goal / object / spatial swap), short tasks | tests whether descriptors predict disagreement across scenes |
 | `mixed_short_skills` | weak | 12 | LIBERO-90 tasks from kitchen, living room, study: drawer, microwave, knob, pick-place, stacking | the hard case: prediction of disagreement must come from skill content |
 | `libero10_long` | weak | 10 | long-horizon two-step tasks, many scenes | likely floor effect (all fail); only usable if the viability probe passes |
@@ -157,19 +158,23 @@ orders (many random draws) and the oracle. Reported: mean, bootstrap CI, fractio
 ## Library build with task selection (`library_loop.py`)
 
 The objective that replaced the single-program family search: build a skill library task by task, as ASPIRE does, and
-choose the next task to repair by measured disagreement. The family is split once into a training pool A and a held-out
-set B (`--eval-split`, hash-seeded by the family only, so every arm gets the same B). Per round: K zero-shot programs per
-unsolved task of A from the current library -> probe them on two seeds -> a task is solved when one program passes both ->
-select (random | unsolved | split | trace; ties broken by a salt-seeded pick) -> repair with the fix-loop subagent and
-promote skills -> record (the fix is checked on seeds 71-72, outside the fix loop's debug seeds 51-65). At each checkpoint
-n, K zero-shot programs per task of B from L_n give SR_n = mean over B of the best program's pass rate (seeds 1-3); this
-is the headline. Coverage of A is the training signal. Each run keeps its library under `R/library/Lnn`; commands refuse
-to run unless the live `.claude/libero/skills` equals the run's current L_n (`activate` restores it). L_0 is empty
-(`--library empty`) or a copy of a library; round 0 activates it. The fix loop of round t writes to
-`R/round_tt/fixloop/` and keeps its promotion ledger there (`record_skill_promotion.py --build-dir`), so arms never share
-fix-loop files and a task can be repaired again in a later round. The repair method is fixed per run by `plan --repair`: `fixloop` (one fix-loop subagent, `fix_code.py`) or
-`evosearch` (the TC1 evosearch protocol, K = 8, top-3 script parents, up to 5 rounds, seeded with the best probe program of
-the task, `evosearch_best_code.py`). Arms differ only in `select`.
+choose the next task to repair by measured disagreement. The maths and every flag are in the header of `library_loop.py`.
+
+* Phase t (one round): K = 3 zero-shot programs per task of A from L_t -> run on seeds 51-65 -> U_t = tasks no program
+  passes on every seed -> select (order: ASPIRE's top-to-bottom walk of a salt-seeded permutation of A, each task once,
+  the default and main control | random | unsolved | split | trace over U_t; ties by a salt-seeded pick) -> repair the
+  selected task for at most 5 iterations on seeds 51-65 -> promote -> `repaired` checks the fix on seeds 71-72 and saves
+  the live library as L_{t+1} in its own folder `R/library/L<t+1>`.
+* No evaluation during the build. Every L_n stays saved and is evaluated later (`activate` / `eval-plan` / `eval
+  --after n`). An optional held-out set B (`--eval-tasks`, default none) is removed from A and stored in `state.json`;
+  `report` refuses runs that differ in family, A, B, K, repair, iterations, L_0 or probe seeds.
+* Library isolation: commands fail unless the live `.claude/libero/skills` equals the expected L_n (`activate` restores
+  it). `repaired` reads the round's promotion record (`record_skill_promotion.py --build-dir R/round_tt/fixloop`) and
+  fails unless it started from L_t and the live library still equals its result.
+* Repair method, fixed per run by `plan --repair`: `fixloop` (one fix-loop subagent, `fix_code.py`) or `evosearch` (the
+  TC1 protocol: K = 8, top-3 script parents, up to 5 rounds, iter_00 candidate_A = the task's best probe program,
+  `evosearch_best_code.py`). Each round's fix loop and promotion record live in `R/round_tt/fixloop/`.
+* L_0 is empty (`--library empty`) or a copy of a directory; round 0 activates it.
 
 ## Status and known limits
 

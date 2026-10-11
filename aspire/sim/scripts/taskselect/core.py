@@ -304,8 +304,8 @@ def load_signatures(task_dir: Path, names: list[str], seeds: list[int]) -> dict[
         by_seed = {}
         for d in (task_dir / name / "eval").glob("trial_*"):
             m = re.match(r"trial_(\d+)_", d.name)
-            if m and (d / "trace.json").exists():
-                by_seed[int(m.group(1))] = trial_signature(d)
+            if m:
+                by_seed[int(m.group(1))] = trial_signature(d) if (d / "trace.json").exists() else "no_trace|"
         missing = [s for s in seeds if s not in by_seed]
         if missing:
             fail(f"no trace for {name} seeds {missing} under {task_dir}")
