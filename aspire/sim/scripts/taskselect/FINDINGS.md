@@ -78,6 +78,27 @@ other 9 tasks. A control gets the same files but writes no hypotheses. Each cond
   The model is not sure that a push works, and all programs push the same way. This is doubt about the world.
   It is not a difference between programs. The rule must keep the two apart.
 
+## Results when the model selects experiments
+
+One experiment is one program on one task with one seed. The budget is 9 experiments of 72 possible.
+After the experiments, a new session predicts pass or fail for all programs and tasks.
+We score it on the pairs that it did not see. Each method has 3 runs.
+
+| who selects the 9 experiments | ranking score (AUC) | error (Brier) |
+|---|---|---|
+| The model, from its hypothesis ledger | 0.84, 0.90, 0.75 | 0.045, 0.045, 0.059 |
+| Random | 0.56, 0.73, 0.58 | 0.075, 0.064, 0.103 |
+| One random program for each task | 0.89, 0.82, 0.81 | 0.066, 0.060, 0.048 |
+
+- The model is better than random in all 3 runs, for the two scores.
+- The model is not better than "one program for each task". The difference is smaller than the difference between runs.
+- The model selects almost the same plan: it tests 8 or 9 different tasks. It learns that each task has a mechanism
+  that nobody measured.
+- With random experiments, the error is larger than the error of "always fail" (0.069).
+- So the useful rule here is: measure each task one time. The probe does this for all programs.
+- A ledger can be better than this rule only when the budget is smaller than the number of tasks.
+  Then the model must use one cause to predict many tasks. We did not test this.
+
 ## What the results show
 
 - Prediction from code does not work for the first round. Measurement works.

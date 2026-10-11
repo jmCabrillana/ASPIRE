@@ -135,6 +135,7 @@ orders (many random draws) and the oracle. Reported: mean, bootstrap CI, fractio
 | `make_families.py`, `families.json` | family definitions, validated against LIBERO |
 | `core.py` | history loading, metrics, rules, proxy sandbox (standard library only) |
 | `select_task.py` | `select`, `probe-plan`, `context`, `verify`, `eval-cmd`, `init-from`, `score-plan`, `score-pick`, `final-plan`, `final-pick`, `heldout-cmds`, `heldout-summary`, `render-prompt` |
+| `library_loop.py` | the library build with task selection (plan, probe, select, repaired, report); see `prompts/library_round.md` |
 | `backtest.py` | offline selector comparison on an outcome matrix (or a synthetic one), incl. probe rules with held-out seeds |
 | `run_matrix.py` | evaluates one candidate set on every family task: the outcome matrix |
 | `score_predictions.py` | scores predicted pass probabilities against a matrix (Brier, AUC, pick quality) |
@@ -152,6 +153,23 @@ orders (many random draws) and the oracle. Reported: mean, bootstrap CI, fractio
 * Cost-adjusted backtest, 5 rounds: probe 1.87-2.10 cumulative `D_seed`; random 0.88-1.02 at the same rounds and 1.31-1.51
   when given 2 extra rounds for the 240 probe trials.
 * One family and one committee: not yet evidence that more disagreement gives better programs, which only online runs can show.
+
+## Library build with task selection (`library_loop.py`)
+
+The objective that replaced the single-program family search: build a skill library task by task, as ASPIRE does, and
+choose the next task to repair by measured disagreement. The family is split once into a training pool A and a held-out
+set B (`--eval-split`, hash-seeded by the family only, so every arm gets the same B). Per round: K zero-shot programs per
+unsolved task of A from the current library -> probe them on two seeds -> a task is solved when one program passes both ->
+select (random | unsolved | split | trace; ties broken by a salt-seeded pick) -> repair with the fix-loop subagent and
+promote skills -> record (the fix is checked on seeds 71-72, outside the fix loop's debug seeds 51-65). At each checkpoint
+n, K zero-shot programs per task of B from L_n give SR_n = mean over B of the best program's pass rate (seeds 1-3); this
+is the headline. Coverage of A is the training signal. Each run keeps its library under `R/library/Lnn`; commands refuse
+to run unless the live `.claude/libero/skills` equals the run's current L_n (`activate` restores it). L_0 is empty
+(`--library empty`) or a copy of a library; round 0 activates it. The fix loop of round t writes to
+`R/round_tt/fixloop/` and keeps its promotion ledger there (`record_skill_promotion.py --build-dir`), so arms never share
+fix-loop files and a task can be repaired again in a later round. The repair method is fixed per run by `plan --repair`: `fixloop` (one fix-loop subagent, `fix_code.py`) or
+`evosearch` (the TC1 evosearch protocol, K = 8, top-3 script parents, up to 5 rounds, seeded with the best probe program of
+the task, `evosearch_best_code.py`). Arms differ only in `select`.
 
 ## Status and known limits
 

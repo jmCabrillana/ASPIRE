@@ -110,3 +110,30 @@ def test_verify_fails_before_promotion_finishes(tmp_path: Path):
         promotion.verify_promotion(
             root, suite="libero_goal_swap", task="example_task"
         )
+
+
+def test_build_dirs_keep_separate_ledgers(tmp_path: Path):
+    promotion = load_script()
+    root = make_campaign(tmp_path)
+    skills = root / ".claude/libero/skills"
+    for build in (Path("outputs/run_a"), Path("outputs/run_b")):
+        promotion.begin_promotion(root, suite="libero_goal_swap", task="example_task", build=build)
+        (skills / "grasp.md").write_text(f"# Grasp\n\n{build.name}\n")
+        record = promotion.finish_promotion(root, suite="libero_goal_swap", task="example_task", build=build)
+        assert record["sequence"] == 1
+        assert promotion.verify_promotion(root, suite="libero_goal_swap", task="example_task", build=build) == record
+    assert not (root / "outputs/libero_fix_loop/libero_goal_swap/skill_promotions.jsonl").exists()
+
+
+def test_empty_library_can_be_promoted(tmp_path: Path):
+    promotion = load_script()
+    root = make_campaign(tmp_path)
+    skills = root / ".claude/libero/skills"
+    for path in skills.iterdir():
+        path.unlink()
+    begin = promotion.begin_promotion(root, suite="libero_goal_swap", task="example_task")
+    assert begin["skill_sha256_before"] == {}
+    (skills / "grasp.md").write_text("# Grasp\n")
+    record = promotion.finish_promotion(root, suite="libero_goal_swap", task="example_task")
+    assert record["changed_skill_files"] == [".claude/libero/skills/grasp.md"]
+    assert "--- /dev/null" in (root / record["patch_path"]).read_text()

@@ -1,0 +1,34 @@
+STYLE FOR CORE FILES (models, core/, tasks)
+
+Target density: lucidrains. Read one of his files before you start, for example
+https://github.com/lucidrains/simple-hierarchical-transformer/blob/main/simple_hierarchical_transformer/simple_hierarchical_transformer.py
+It carries about 6 comment lines in more than 400 lines of code, which is near 1.5%. Aim under 5%.
+Measured example: differentiable_RAG/models/smolvla_longctx.py went from 35.3% to 3.9%.
+
+NEVER PUT RESULTS IN A CORE FILE
+  No numbers from runs, no arm names, no dates, no incident reports, no "measured on ...".
+  Those go in the commit message, the board, or doc/. A core file says what the code DOES.
+
+HEADER OF EACH MODEL OR SUBMODEL FILE
+  * an ASCII diagram of the architecture, ML paper grade
+  * the MATHS, with function mappings between spaces and arrows, like a commutative diagram:
+        s     : R^{h x d} x R^{P x h x d} -> R^{h x P}     s = q K^T / sqrt(d)
+        R_P   : R^{h x d} -> R^{h x d}                     q <- R_P q, k <- R_P k, v unchanged
+  * the BRANCHING table: every CLI / args key, its default, and one line on what it selects
+
+IN THE BODY
+  * comments only when the concept is EXTREMELY subtle, and then one or two lines
+  * a formula is better than a sentence
+  * section markers are fine:   # ---- eviction ----
+  * shape annotations are fine:  # [B, H, S, hd]
+  * self-documenting names instead of a comment that restates the line
+
+WRITE COMMENTS IN ASD-STE100
+  Short sentences. One idea each. Active voice. Simple tenses.
+
+WHEN YOU CUT PROSE
+  Prove the edit changed no behaviour: run a fixed forward and compare a digest before and after.
+  An unchanged digest does NOT prove the edit is correct -- it cannot see indentation or a broken
+  comment -- so read the diff as well.
+  Check for tests that depend on prose. A test that bounds a code block with a comment, or asserts
+  a sentence is present, breaks the moment the prose is tidied. Re-anchor it to code.

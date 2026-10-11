@@ -124,6 +124,24 @@ if best_grasp_world is None:
 
 **IK guard** — always check `if joints is not None` before `move_to_joints`.
 
+**Held-check after close** — verify the grasp from the gripper state before lifting.
+- Trigger: the target is wider than the gripper opening at some height (e.g. a bowl rim), so a top-down grasp can close on air. A close that finishes at a near-zero width is an air grasp even though `close_gripper()` returned normally.
+- Code (placeholders: `HELD_THRESHOLD`, `GRASP_OFFSETS`, `TOP_DOWN_QUAT`, `base_z`, `cx`, `cy`):
+  ```python
+  HELD_THRESHOLD = 0.03  # normalized: 0 = closed, 1 = open
+  def gripper_pos():
+      return float(get_observation()["robot_cartesian_pos"][-1])
+  for offset in GRASP_OFFSETS:  # ascending heights above object base
+      open_gripper()
+      goto_pose(np.array([cx, cy, base_z + offset]), TOP_DOWN_QUAT, z_approach=0.12)
+      close_gripper()
+      if gripper_pos() >= HELD_THRESHOLD:
+          break
+      goto_pose(np.array([cx, cy, base_z + offset + 0.12]), TOP_DOWN_QUAT)
+  ```
+- Why it works + evidence: it separated air grasps (~0.015) from outer-wall contacts (0.11–0.21) on every dev seed of libero_goal_swap/put_the_bowl_on_the_stove (seeds 51–65; source `outputs/libero_fix_loop/libero_goal_swap/put_the_bowl_on_the_stove/findings.md`, 2026-10-05). It detects a bad grasp but did not make that task succeed; no seed flipped to reward 1.0. Pair it with a post-lift re-check (below), since a held reading can still slip during lift.
+- Post-lift re-check: re-read the same signal after the lift. A drop below `HELD_THRESHOLD` means the object has slipped out; open, back off, and retry at the next height. Observed on seeds 51 (0.140→0.086), 57 (0.125→0.091), 59 (0.042→0.032). It catches the slip but does not prevent it.
+
 **TCP offset for placement**: `goto_pose(pos, quat)` moves the **WRIST** to `pos`; fingertips extend below the wrist. Calibrate per robot/gripper config and adjust placement Z accordingly.
 
 **Top-level call** — if you define a `run()` function, call it at the end:
@@ -137,6 +155,7 @@ run()
 
 | Object | Good grasp (gw >) | Air grasp (gw <) | Notes |
 |---|---|---|---|
+| silver bowl (libero_goal_swap, put_the_bowl_on_the_stove) | 0.11 (outer-wall contact at base) | 0.03 | Rim ~0.106×0.110 m is wider than the ~0.08 m opening; only the base pinch contacts, and it slips on lift. See held-check above. |
 
 ---
 

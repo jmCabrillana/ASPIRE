@@ -67,10 +67,7 @@ def skill_files(root: Path) -> list[Path]:
     skills = root / SKILLS_REL
     if not skills.is_dir():
         raise FileNotFoundError(f"skill library does not exist: {skills}")
-    files = sorted(path for path in skills.rglob("*") if path.is_file())
-    if not files:
-        raise FileNotFoundError(f"skill library is empty: {skills}")
-    return files
+    return sorted(path for path in skills.rglob("*") if path.is_file())
 
 
 def skill_hashes(root: Path) -> dict[str, str]:
@@ -85,20 +82,20 @@ def library_sha256(hashes: dict[str, str]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def campaign_dir(root: Path, suite: str) -> Path:
-    return root / BUILD_REL / suite
+def campaign_dir(root: Path, suite: str, build: Path = BUILD_REL) -> Path:
+    return root / build / suite
 
 
-def promotions_dir(root: Path, suite: str) -> Path:
-    return campaign_dir(root, suite) / "skill_promotions"
+def promotions_dir(root: Path, suite: str, build: Path = BUILD_REL) -> Path:
+    return campaign_dir(root, suite, build) / "skill_promotions"
 
 
-def ledger_path(root: Path, suite: str) -> Path:
-    return campaign_dir(root, suite) / "skill_promotions.jsonl"
+def ledger_path(root: Path, suite: str, build: Path = BUILD_REL) -> Path:
+    return campaign_dir(root, suite, build) / "skill_promotions.jsonl"
 
 
-def read_ledger(root: Path, suite: str) -> list[dict]:
-    ledger = ledger_path(root, suite)
+def read_ledger(root: Path, suite: str, build: Path = BUILD_REL) -> list[dict]:
+    ledger = ledger_path(root, suite, build)
     if not ledger.exists():
         return []
     entries = []
@@ -112,8 +109,8 @@ def read_ledger(root: Path, suite: str) -> list[dict]:
     return entries
 
 
-def promotion_directories(root: Path, suite: str) -> list[Path]:
-    base = promotions_dir(root, suite)
+def promotion_directories(root: Path, suite: str, build: Path = BUILD_REL) -> list[Path]:
+    base = promotions_dir(root, suite, build)
     return sorted(path for path in base.glob("*") if path.is_dir()) if base.exists() else []
 
 
@@ -121,8 +118,8 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
-def completed_record(root: Path, suite: str, task: str) -> tuple[Path, dict] | None:
-    for directory in promotion_directories(root, suite):
+def completed_record(root: Path, suite: str, task: str, build: Path = BUILD_REL) -> tuple[Path, dict] | None:
+    for directory in promotion_directories(root, suite, build):
         record_path = directory / "record.json"
         if record_path.exists():
             record = load_json(record_path)
@@ -131,22 +128,22 @@ def completed_record(root: Path, suite: str, task: str) -> tuple[Path, dict] | N
     return None
 
 
-def pending_promotions(root: Path, suite: str) -> list[tuple[Path, dict]]:
+def pending_promotions(root: Path, suite: str, build: Path = BUILD_REL) -> list[tuple[Path, dict]]:
     pending = []
-    for directory in promotion_directories(root, suite):
+    for directory in promotion_directories(root, suite, build):
         begin_path = directory / "begin.json"
         if begin_path.exists() and not (directory / "record.json").exists():
             pending.append((directory, load_json(begin_path)))
     return pending
 
 
-def next_sequence(root: Path, suite: str) -> int:
+def next_sequence(root: Path, suite: str, build: Path = BUILD_REL) -> int:
     sequences = [
         int(entry["sequence"])
-        for entry in read_ledger(root, suite)
+        for entry in read_ledger(root, suite, build)
         if isinstance(entry.get("sequence"), int)
     ]
-    for directory in promotion_directories(root, suite):
+    for directory in promotion_directories(root, suite, build):
         for filename in ("begin.json", "record.json"):
             path = directory / filename
             if path.exists():
@@ -156,9 +153,9 @@ def next_sequence(root: Path, suite: str) -> int:
     return max(sequences, default=0) + 1
 
 
-def append_ledger_entry(root: Path, suite: str, record: dict) -> None:
-    ledger = ledger_path(root, suite)
-    existing_ids = {entry.get("promotion_id") for entry in read_ledger(root, suite)}
+def append_ledger_entry(root: Path, suite: str, record: dict, build: Path = BUILD_REL) -> None:
+    ledger = ledger_path(root, suite, build)
+    existing_ids = {entry.get("promotion_id") for entry in read_ledger(root, suite, build)}
     if record["promotion_id"] in existing_ids:
         return
     ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -173,13 +170,14 @@ def begin_promotion(
     *,
     suite: str,
     task: str,
+    build: Path = BUILD_REL,
     timestamp: Callable[[], str] = now,
 ) -> dict:
     suite = validate_name(suite, "suite")
     task = validate_name(task, "task")
-    if completed_record(root, suite, task):
+    if completed_record(root, suite, task, build):
         raise ValueError(f"promotion already completed for {suite}/{task}")
-    pending = pending_promotions(root, suite)
+    pending = pending_promotions(root, suite, build)
     if pending:
         _, record = pending[0]
         raise ValueError(
@@ -187,9 +185,9 @@ def begin_promotion(
             f"{record.get('suite')}/{record.get('task')} ({record.get('promotion_id')})"
         )
 
-    sequence = next_sequence(root, suite)
+    sequence = next_sequence(root, suite, build)
     promotion_id = f"{sequence:04d}_{task}"
-    directory = promotions_dir(root, suite) / promotion_id
+    directory = promotions_dir(root, suite, build) / promotion_id
     before_dir = directory / "before"
     before_hashes = skill_hashes(root)
     for relative in before_hashes:
@@ -198,7 +196,7 @@ def begin_promotion(
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-    findings = campaign_dir(root, suite) / task / "findings.md"
+    findings = campaign_dir(root, suite, build) / task / "findings.md"
     record = {
         "schema_version": SCHEMA_VERSION,
         "promotion_id": promotion_id,
@@ -246,20 +244,21 @@ def finish_promotion(
     *,
     suite: str,
     task: str,
+    build: Path = BUILD_REL,
     reason: str | None = None,
     timestamp: Callable[[], str] = now,
 ) -> dict:
     suite = validate_name(suite, "suite")
     task = validate_name(task, "task")
-    completed = completed_record(root, suite, task)
+    completed = completed_record(root, suite, task, build)
     if completed:
         _, record = completed
-        append_ledger_entry(root, suite, record)
+        append_ledger_entry(root, suite, record, build)
         return record
 
     matches = [
         (directory, begin)
-        for directory, begin in pending_promotions(root, suite)
+        for directory, begin in pending_promotions(root, suite, build)
         if begin.get("task") == task
     ]
     if not matches:
@@ -288,24 +287,25 @@ def finish_promotion(
         "reason": reason,
     }
     write_json_atomic(directory / "record.json", record)
-    append_ledger_entry(root, suite, record)
+    append_ledger_entry(root, suite, record, build)
     return record
 
 
-def verify_promotion(root: Path, *, suite: str, task: str) -> dict:
+def verify_promotion(root: Path, *, suite: str, task: str, build: Path = BUILD_REL) -> dict:
     suite = validate_name(suite, "suite")
     task = validate_name(task, "task")
-    completed = completed_record(root, suite, task)
+    completed = completed_record(root, suite, task, build)
     if not completed:
         raise ValueError(f"promotion is not complete for {suite}/{task}")
     _, record = completed
-    append_ledger_entry(root, suite, record)
+    append_ledger_entry(root, suite, record, build)
     return record
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
+    parser.add_argument("--build-dir", type=Path, default=BUILD_REL, help="Campaign directory, relative to --root")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("begin", "verify"):
         subparser = subparsers.add_parser(command)
@@ -323,21 +323,21 @@ def main() -> int:
     root = args.root.resolve()
     try:
         if args.command == "begin":
-            record = begin_promotion(root, suite=args.suite, task=args.task)
+            record = begin_promotion(root, suite=args.suite, task=args.task, build=args.build_dir)
             print(
                 f"promotion started: {record['promotion_id']} "
                 f"(library {record['library_before_sha256']})"
             )
         elif args.command == "finish":
             record = finish_promotion(
-                root, suite=args.suite, task=args.task, reason=args.reason
+                root, suite=args.suite, task=args.task, reason=args.reason, build=args.build_dir
             )
             print(
                 f"promotion recorded: {record['promotion_id']} "
                 f"({len(record['changed_skill_files'])} skill files changed)"
             )
         else:
-            record = verify_promotion(root, suite=args.suite, task=args.task)
+            record = verify_promotion(root, suite=args.suite, task=args.task, build=args.build_dir)
             print(
                 f"promotion verified: {record['promotion_id']} "
                 f"(library {record['library_after_sha256']})"
