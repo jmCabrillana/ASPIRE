@@ -406,3 +406,28 @@ def test_capped_fixloop_refuses_extra_iterations(tmp_path, sim_root, monkeypatch
     promote(sim_root, run, 0, None)
     with pytest.raises(SystemExit):
         ll.main(["repaired", str(run), "--round", "0"])
+
+
+def test_lex_breaks_split_ties_by_shared_failure(tmp_path, sim_root, monkeypatch):
+    run = new_run(tmp_path / "run")
+    pool = ll.load_state(run)["pool"]
+    split_task = pool[4]
+    monkeypatch.setattr(ll, "run_eval", fake_eval({split_task: {"candidate_A": [True, False, True]}}))
+    write_programs(run, 0)
+    ll.main(["probe", str(run), "--round", "0", *PROBE])
+    rd = ll.round_dir(run, 0)
+    ll.main(["select", str(run), "--round", "0", "--rule", "lex"])
+    assert json.loads((rd / "selection.json").read_text())["task"] == split_task
+    probe = json.loads((rd / "probe.json").read_text())
+    for t, p in probe["tasks"].items():
+        p["split"], p["trace"], p["mode"] = 0.0, 0.0, "perceive" if t in pool[5:8] else "air"
+    probe["tasks"][pool[1]]["trace"] = 0.5
+    (rd / "probe.json").write_text(json.dumps(probe))
+    ll.main(["select", str(run), "--round", "0", "--rule", "lex", "--force"])
+    assert json.loads((rd / "selection.json").read_text())["task"] == pool[1]
+    for t in pool[2:7]:
+        probe["tasks"][t]["mode"] = "perceive"                                                # 5 perceive vs 2 air
+    (rd / "probe.json").write_text(json.dumps(probe))
+    ll.main(["select", str(run), "--round", "0", "--rule", "lex", "--force"])
+    assert json.loads((rd / "selection.json").read_text())["task"] in pool[2:7]
+    assert "perceive" in (rd / "repair_prompt.md").read_text()

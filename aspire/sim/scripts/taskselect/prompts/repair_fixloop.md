@@ -28,6 +28,11 @@ same command (delete iter_NN/candidate_A/eval first); it does not count as an it
 The program kept for the task is chosen by library_loop.py repaired: the iteration with the most passes (ties: the later
 one). Do not copy or rename programs.
 
+Unsolved tasks of this build and the stage where most of their trials fail (crash, perceive = an object not found,
+no_motion, no_close, air = closed on nothing, slip, held_end, released = placed wrong):
+{{MODES}}
+When your fix addresses a stage that other tasks share, state the generalizable pattern at that level.
+
 Finally write TASK_DIR/findings.md (Step 5 format): what failed, what fixed it, the pass count of every iteration, and a
 "Generalizable Patterns" section the coordinator can promote into the skill library. Do not edit .claude/libero/skills/.
 Never read other outputs/ directories than TASK_DIR and PROBE_DIR, and do not write to docs/logs/.

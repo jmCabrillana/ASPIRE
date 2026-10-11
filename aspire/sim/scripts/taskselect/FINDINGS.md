@@ -152,3 +152,24 @@ Step 1 costs about 10 to 20 hours for each order. This is an estimate.
 - The best tasks to build can be the tasks where all programs fail. Then "most splits" is the wrong rule.
 - Step 0 can show that almost all tasks fail. Then selection helps only later in the build.
 - One GPU cannot run the full build of 90 tasks for each order.
+
+## Offline check of the selection rules for the library build (2026-10-11)
+
+Data: the goal_swap matrix (8 untuned programs, 10 tasks, seeds 51-55), every committee of 3 programs (56), 5 picks
+without repeats. No library and no repair are simulated: the committee stays fixed. Random rules: 40 salts.
+"Repairable" = no program passes every seed, but one program passes at least one seed.
+
+| rule | solved tasks picked (of 5) | repairable picks (of 5) | first pick repairable | distinct failure stages in 5 picks |
+|---|---|---|---|---|
+| order (ASPIRE) | 0.38 | 1.10 | 22% | 2.34 |
+| unsolved | 0 | 1.23 | 23% | 2.36 |
+| split | 0 | 2.21 | 98% | 2.14 |
+| trace | 0 | 1.98 | 57% | 2.11 |
+| lex | 0 | 2.21 | 98% | 1.61 |
+
+- `split` and `lex` pick a repairable task first in 55 of 56 committees. `order` does this in 1 of 5 committees.
+- There are only about 2 repairable tasks for each committee. After them, `lex` picks the most common failure stage
+  (closed on air, 5 of 10 tasks), so it covers fewer stages than `split`, which then picks at random.
+- Failure stages of the 400 trials: air 208, released 117, perceive 44, pass 28, slip 3. turn_on_the_stove is
+  perceive (SAM3 does not find the knob); the drawer and rack tasks are released.
+- This shows which tasks a rule picks, not whether the library gets better. Only an online run shows that.

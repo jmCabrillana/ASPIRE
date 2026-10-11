@@ -850,7 +850,7 @@ HELD_RELEASED = ["goto_pose", ("close_gripper", 0.33), "goto_pose", "open_grippe
 
 
 @pytest.mark.parametrize("calls, passed, stdout, expected", [
-    (["get_observation"], False, "[locate] not found: bowl", "no_motion|locate:not found"),
+    (["get_observation"], False, "[locate] not found: bowl", "perceive|locate:not found"),
     (["goto_pose", "goto_pose"], False, "", "no_close|"),
     (AIR, False, "[pick] no held grasp found\n[run] place failed: RuntimeError", "air|pick:no held grasp found;run:place failed"),
     (["goto_pose", ("close_gripper", 0.2), ("get_observation", 0.01)], False, "", "slip|"),
@@ -865,7 +865,7 @@ def test_trial_signature_stages(tmp_path, calls, passed, stdout, expected):
 def test_trace_score_hand_computed_and_load_signatures(tmp_path):
     sigs = {"A": ["air|", "air|"], "B": ["air|", "released|"], "C": ["air|", "pass|"], "D": ["air|", "pass|"]}
     assert core.trace_score(sigs, "trace") == pytest.approx((0.0 + 1.5) / 2)          # seed 2: 1/4, 1/4, 1/2
-    gaps = (3 + 4 + 4 + 1 + 1 + 0) / (6 * 6)                                          # stages 2, 5, 6, 6
+    gaps = (3 + 4 + 4 + 1 + 1 + 0) / (6 * 8)                                          # stages 4, 7, 8, 8
     assert core.trace_score(sigs, "progress") == pytest.approx(gaps / 2, abs=1e-5)
     with pytest.raises(SystemExit):
         core.trace_score(sigs, "split")
@@ -935,3 +935,21 @@ def test_stage_predictions_are_scored_against_signatures():
     stages["s/t2"]["B"] = "flying"
     with pytest.raises(SystemExit):
         sp.score_stages(matrix, stages, {"s/t0"})
+
+
+def test_trial_signature_crash_and_perceive(tmp_path):
+    d = write_trial(tmp_path, "candidate_A", 51, AIR, stdout="Traceback (most recent call last)")
+    assert core.trial_signature(d).startswith("crash|")
+    d = write_trial(tmp_path, "candidate_A", 52, AIR)
+    trace = json.loads((d / "trace.json").read_text())
+    (d / "trace.json").write_text(json.dumps([{"function": "segment_sam3_text_prompt",
+                                               "result": {"num_masks": 200, "mask_0_score": 0.05}}, *trace]))
+    assert core.trial_signature(d) == "perceive|"
+    d = write_trial(tmp_path, "candidate_A", 53, AIR)
+    assert core.trial_signature(d.rename(d.parent / d.name.replace("sandboxrc_0", "sandboxrc_1"))).startswith("crash")
+
+
+def test_task_mode():
+    assert core.task_mode({"A": ["air|", "pass|", "perceive|"], "B": ["air|x", "perceive|", "pass|"]}) == "perceive"
+    assert core.task_mode({"A": ["air|", "air|"], "B": ["slip|", "pass|"]}) == "air"
+    assert core.task_mode({"A": ["pass|"]}) == "pass"

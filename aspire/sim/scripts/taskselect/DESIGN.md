@@ -162,7 +162,10 @@ choose the next task to repair by measured disagreement. The maths and every fla
 
 * Phase t (one round): K = 3 zero-shot programs per task of A from L_t -> run on seeds 51-65 -> U_t = tasks no program
   passes on every seed -> select (order: ASPIRE's top-to-bottom walk of a salt-seeded permutation of A, each task once,
-  the default and main control | random | unsolved | split | trace over U_t; ties by a salt-seeded pick) -> repair the
+  the default and main control | random | unsolved | split | trace | lex over U_t; ties by a salt-seeded pick).
+  `lex` ranks unsolved tasks by (split, share, trace): a task where some programs pass, then the task whose failure
+  stage (`core.task_mode`: crash, perceive, no_motion, no_close, air, slip, held_end, released) is shared by the most
+  unsolved tasks, then trace entropy. The repair prompt lists every unsolved task's failure stage -> repair the
   selected task for at most 5 iterations on seeds 51-65 -> promote -> `repaired` checks the fix on seeds 71-72 and saves
   the live library as L_{t+1} in its own folder `R/library/L<t+1>`.
 * No evaluation during the build. Every L_n stays saved and is evaluated later (`activate` / `eval-plan` / `eval

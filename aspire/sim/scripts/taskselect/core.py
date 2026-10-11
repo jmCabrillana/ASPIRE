@@ -22,8 +22,9 @@ KNN_EXPLORATION = 0.25
 PRIMARY = "D_seed"      # per-seed pass/fail split: the contrast the next round learns from
 PROBE_SCORES = ("split", "regret", "learnability")
 TRACE_SCORES = ("trace", "progress")     # scores that read the trial traces, not only pass/fail
-STAGES = ("no_motion", "no_close", "air", "slip", "held_end", "released", "pass")
+STAGES = ("crash", "perceive", "no_motion", "no_close", "air", "slip", "held_end", "released", "pass")
 HELD_WIDTH = 0.03       # normalised gripper width after closing: below this the fingers closed on nothing
+SEEN_SCORE = 0.15       # SAM3 best-mask score: below this the queried object was not found
 PROXY_TIMEOUT_S = 120
 
 
@@ -234,8 +235,9 @@ def probe_score(outcomes: dict[str, list[int]], kind: str = "split") -> float:
 def trial_signature(trial_dir: Path) -> str:
     """What one trial did, from its API trace and printed output only: "<stage>|<tags>".
 
-    Stage is how far the trial got (STAGES, grasp-centred): no motion, moved without closing, closed on air, held then
-    lost, still holding at the end, held and released, pass. Tags are the failure messages the program printed.
+    Stage is how far the trial got (STAGES, grasp-centred): crashed, an object not found, no motion, moved without
+    closing, closed on air, held then lost, still holding at the end, held and released, pass. Tags are the failure
+    messages the program printed.
     """
     trace = json.loads((trial_dir / "trace.json").read_text())
     moved = any(e["function"] in ("goto_pose", "move_to_joints") for e in trace)
@@ -249,8 +251,17 @@ def trial_signature(trial_dir: Path) -> str:
             released, held = released or held, False
         elif fn == "get_observation" and held and (result.get("robot_cartesian_pos") or [1.0])[-1] < HELD_WIDTH:
             held, lost = False, True
+    summary = trial_dir / "summary.txt"
+    stdout = summary.read_text().split("Stdout:")[-1].split("Stderr:")[0].strip() if summary.exists() else ""
+    tags = re.findall(r"^\[(\w+)\] (not found|[\w ]*failed|no [\w ]+|could not [\w ]+)", stdout, flags=re.M)
+    unseen = any(e["function"].startswith("segment_sam3") and (e.get("result") or {}).get("mask_0_score", 1.0) < SEEN_SCORE
+                 for e in trace) or any(b == "not found" for _, b in tags)
     if "taskcompleted_1" in trial_dir.name:
         stage = "pass"
+    elif "sandboxrc_1" in trial_dir.name or "Traceback" in (summary.read_text() if summary.exists() else ""):
+        stage = "crash"
+    elif unseen:
+        stage = "perceive"
     elif not moved:
         stage = "no_motion"
     elif closes == 0:
@@ -261,10 +272,13 @@ def trial_signature(trial_dir: Path) -> str:
         stage = "held_end"
     else:
         stage = "slip" if lost else "air"
-    summary = trial_dir / "summary.txt"
-    stdout = summary.read_text().split("Stdout:")[-1].split("Stderr:")[0].strip() if summary.exists() else ""
-    tags = re.findall(r"^\[(\w+)\] (not found|[\w ]*failed|no [\w ]+|could not [\w ]+)", stdout, flags=re.M)
     return stage + "|" + ";".join(sorted({f"{a}:{b.strip()}" for a, b in tags}))
+
+
+def task_mode(signatures: dict[str, list[str]]) -> str:
+    """Most common failing stage of a task's trials; ties go to the earlier stage."""
+    fails = Counter(s.split("|")[0] for row in signatures.values() for s in row if not s.startswith("pass"))
+    return min(fails, key=lambda st: (-fails[st], STAGES.index(st))) if fails else "pass"
 
 
 def render_trace(trial_dir: Path) -> str:

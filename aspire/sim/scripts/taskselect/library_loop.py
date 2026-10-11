@@ -14,6 +14,9 @@ r"""Skill-library build with disagreement-based task selection.
     U_t    = { x ∈ A : ¬∃π ∀s ∈ S_probe  o(π, x, s) = 1 }           unsolved under L_t, re-measured every round
     x_t    = π_salt(A)[t]                                           order: ASPIRE's top-to-bottom walk, no revisit
     x_t    = U( argmax_{x ∈ U_t} D(x) )                             split / trace; U = salt-seeded pick among ties
+    m(x)   = mode of the failing stages of x                        crash < perceive < no_motion < ... (core.STAGES)
+    sh(x)  = |{ y ∈ U_t : m(y) = m(x) }|
+    x_t    = U( argmax_{x ∈ U_t} (D(x), sh(x), T(x)) )              lex: repairable, then shared failure, then varied
     cov_t  = 1 - |U_t| / |A|
     SR_n   = mean_{x ∈ B} mean_π mean_{s ∈ S_eval} o(π, x, s)     sr_best: max_π instead of mean_π
     S_check ∩ S_debug = S_eval ∩ S_debug = ∅,   S_debug = {51..65}
@@ -30,7 +33,7 @@ r"""Skill-library build with disagreement-based task selection.
                --repair-iters   5          repair iterations on the selected task (fixloop: rewrite + replay 51-65;
                                            evosearch: rounds)
     probe      --seeds          51..65     S_probe, every task of A
-    select     --rule           order      order (π_salt) | random (U over A) | unsolved (U over U_t) | split | trace
+    select     --rule           order      order (π_salt) | random | unsolved | split | trace | lex
                --salt           r1         seed of U
                --force          off        select again after the repair started
                --gpu            0          GPU named in round_tt/repair_prompt.md (fixloop: prompts/repair_fixloop.md)
@@ -64,7 +67,7 @@ import core  # noqa: E402
 from core import fail  # noqa: E402
 
 REPO = core.HERE.parents[1]
-RULES = ("order", "random", "unsolved", "split", "trace")
+RULES = ("order", "random", "unsolved", "split", "trace", "lex")
 REPAIRS = {"fixloop": "fix_code.py", "evosearch": "evosearch_best_code.py"}
 SKILLS = REPO / ".claude" / "libero" / "skills"
 DEBUG_SEEDS = set(range(51, 66))
@@ -254,6 +257,7 @@ def cmd_probe(args) -> int:
         probe["tasks"][task] = {
             "outcomes": outcomes, "stages": {c: [s.split("|")[0] for s in sig] for c, sig in signatures.items()},
             "split": core.probe_score(outcomes, "split"), "trace": core.trace_score(signatures, "trace"),
+            "mode": core.task_mode(signatures),
             "passing": passing_program(outcomes),
         }
     state["probe_seeds"] = seeds
@@ -293,7 +297,9 @@ def cmd_select(args) -> int:
     elif args.rule == "unsolved":
         candidates = todo
     else:
-        scores = {t: probe["tasks"][t][args.rule] for t in todo}
+        p = probe["tasks"]
+        scores = {t: ([p[t]["split"], sum(p[u]["mode"] == p[t]["mode"] for u in todo), p[t]["trace"]]
+                      if args.rule == "lex" else p[t][args.rule]) for t in todo}
         candidates = [t for t in todo if scores[t] == max(scores.values())]
     chosen = core.pick_random_any(state["family"], candidates, args.salt, args.round)
     outcomes = probe["tasks"][chosen]["outcomes"]
@@ -309,7 +315,8 @@ def cmd_select(args) -> int:
     print(f"round {args.round}: {args.rule} -> {chosen}" + ("" if chosen in todo else "  (already solved)"))
     if state["repair"] == "fixloop":
         fields = {"GPU": args.gpu, "SUITE": chosen.split("/", 1)[0], "TASK": chosen.split("/", 1)[1],
-                  "ITERS": state["repair_iters"], "TASK_DIR": task_dir, "PROBE_DIR": repair["probe_dir"]}
+                  "ITERS": state["repair_iters"], "TASK_DIR": task_dir, "PROBE_DIR": repair["probe_dir"],
+                  "MODES": "\n".join(f"  {t}: {probe['tasks'][t]['mode']}" for t in todo)}
         text = (core.HERE / "prompts" / "repair_fixloop.md").read_text()
         for key, value in fields.items():
             text = text.replace("{{" + key + "}}", str(value))
