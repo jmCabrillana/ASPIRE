@@ -166,50 +166,42 @@ def fig_heatmap(numbers: dict) -> None:
 
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
-    base = load_probe("library_unsolved_r1", 0)
-    runs = [("round 0 (shared)", base, "o")]
-    if "a" in noise:
-        runs.append(("fresh batch a", noise["a"], "D"))
-    if "b" in noise:
-        runs.append(("fresh batch b", noise["b"], "s"))
-    tasks = [t for t in base if all(t in r for _, r, _ in runs)]
-    complete = {name: all(t in r for t in base) for name, r, _ in runs}
-    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.6), gridspec_kw={"width_ratios": [2.3, 1]})
-    ax = axes[0]
-    y = np.arange(len(tasks))
-    for i, t in enumerate(tasks):
-        vals = [max(sum(r) for r in run[t]["outcomes"].values()) for _, run, _ in runs]
-        ax.plot([min(vals), max(vals)], [i, i], color=GRID, linewidth=6, solid_capstyle="round", zorder=1)
-    for j, (name, run, marker) in enumerate(runs):
-        vals = [max(sum(r) for r in run[t]["outcomes"].values()) for t in tasks]
-        ax.scatter(vals, y + (j - (len(runs) - 1) / 2) * 0.14, s=52, marker=marker, color=GREY if j else INK,
-                   edgecolor=SURFACE, linewidth=1.2, zorder=3, label=name)
-    ax.set_yticks(y, [short(t) for t in tasks])
-    ax.invert_yaxis()
-    ax.set_xlim(-0.5, 15.5)
-    ax.grid(axis="x", color=GRID, linewidth=0.8)
-    ax.set_axisbelow(True)
-    ax.set_xlabel("passes of 15 by the best of 3 programs")
-    ax.legend(frameon=False, loc="upper right", fontsize=9)
-    ax.set_title("Same empty library, three independent generations", loc="left", fontsize=11, fontweight="bold")
+    """One plot: three independent generations of round 0 from the same empty library, two ways of averaging."""
+    gens = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0), "o", INK),
+            ("fresh batch a", noise["a"], "D", GREY), ("fresh batch b", noise["b"], "s", GREY)]
+    tasks = list(gens[0][1])
 
-    ax = axes[1]
-    labels, bests = [], []
-    for name, run, _ in runs:
-        sub = {t: run[t] for t in tasks}
-        labels.append(name.replace(" (shared)", "\n(shared)").replace("fresh ", "fresh\n"))
-        bests.append(best_rate(sub))
-    ax.bar(range(len(runs)), bests, color=[INK] + [GREY] * (len(runs) - 1), width=0.6)
-    for i, v in enumerate(bests):
-        ax.text(i, v + 0.008, f"{v:.3f}", ha="center", fontsize=9)
-    ax.set_xticks(range(len(runs)), labels)
-    ax.set_ylim(0, max(bests + [0.3]) * 1.2)
-    style(ax, f"mean best-program rate ({len(tasks)} tasks)")
-    ax.set_title("Mean over tasks", loc="left", fontsize=11, fontweight="bold")
-    numbers["noise_tasks_compared"] = len(tasks)
-    numbers["noise_best_rate"] = {name: round(v, 3) for (name, _, _), v in zip(runs, bests)}
-    if not all(complete.values()) or len(runs) < 3:
-        fig.text(0.01, 0.01, "PROVISIONAL: batches not fully probed yet", color=ORANGE, fontsize=9)
+    def value(run: dict, t: str, kind: str) -> float:
+        rows = [sum(r) for r in run[t]["outcomes"].values()]
+        return (max(rows) if kind == "best" else st.fmean(rows)) / 15
+
+    kinds = [("best", "best of the 3 programs\nper task"), ("all", "mean of all\n27 programs")]
+    arms_final = {a: load_probe(d, 3) for a, (d, _, _) in ARMS.items()}
+    fig, ax = plt.subplots(figsize=(7.6, 5.6))
+    stats: list[str] = []
+    for x, (kind, label) in enumerate([(k, l) for k, l in kinds]):
+        per_gen = [st.fmean(value(run, t, kind) for t in tasks) for _, run, _, _ in gens]
+        mean, sd = st.fmean(per_gen), st.stdev(per_gen)
+        pooled = (st.fmean(st.variance([value(run, t, kind) for _, run, _, _ in gens]) for t in tasks)) ** 0.5 / len(tasks) ** 0.5
+        ax.add_patch(plt.Rectangle((x - 0.17, mean - sd), 0.34, 2 * sd, color=GRID, zorder=1))
+        ax.plot([x - 0.17, x + 0.17], [mean, mean], color=INK, linewidth=2, zorder=2)
+        for j, ((name, _, marker, color), v) in enumerate(zip(gens, per_gen)):
+            ax.scatter(x + (j - 1) * 0.09, v, s=70, marker=marker, color=color, edgecolor=SURFACE, linewidth=1.3, zorder=3,
+                       label=name if x == 0 else None)
+        for a_, (_, color, _) in ARMS.items():
+            v = best_rate(arms_final[a_]) if kind == "best" else mean_rate(arms_final[a_])
+            ax.scatter(x + 0.30, v, s=60, marker="^", color=color, edgecolor=SURFACE, linewidth=1.2, zorder=3,
+                       label=f"{a_} arm, final round" if x == 0 else None)
+        stats.append(f"{label}\n\nmean {mean:.3f}\nSD across generations {sd:.3f}\nper-task pooled estimate {pooled:.3f}")
+        numbers[f"noise_{kind}"] = {"generations": [round(v, 3) for v in per_gen], "mean": round(mean, 3),
+                                    "sd_across_generations": round(sd, 3), "sd_from_pooled_task_variance": round(pooled, 3)}
+    ax.set_xticks([0, 1], stats)
+    ax.set_xlim(-0.55, 1.55)
+    ax.set_ylim(0, 0.32)
+    style(ax, "mean pass rate over the 9 tasks")
+    ax.legend(frameon=False, loc="upper right", fontsize=8.5)
+    ax.set_title("Noise floor: same empty library, three independent generations\n(grey bar = mean \u00b1 1 SD; triangles = the two arms after 3 repairs)",
+                 loc="left", fontsize=10.5, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)
     plt.close(fig)
@@ -220,21 +212,7 @@ def main() -> None:
     noise = noise_batches()
     fig_arms(numbers, noise)
     fig_heatmap(numbers)
-    partial = {}
-    for b in "ab":
-        d = OUT / f"library_noise_{b}" / "round_00" / "programs"
-        if d.exists():
-            from_core = {}
-            import sys
-            sys.path.insert(0, str(HERE.parent))
-            import core
-            for s in sorted(d.glob("*/iter_summary.json")):
-                t = s.parent.name.replace("__", "/", 1)
-                outcomes = core.load_round(s.parent)["outcomes"]
-                from_core[t] = {"outcomes": outcomes, "stages": {}}
-            if from_core:
-                partial[b] = from_core
-    fig_noise(numbers, {**partial, **noise} if len(noise) < 2 else noise)
+    fig_noise(numbers, noise)
     (FIGS / "numbers.json").write_text(json.dumps(numbers, indent=2) + "\n")
     print(json.dumps(numbers, indent=1)[:900])
 

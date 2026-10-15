@@ -60,16 +60,27 @@ Three independent generations of programs from the same empty library, same pool
 | fresh batch a | 0.059 | 0.035 | 14 | 63 |
 | fresh batch b | 0.148 | 0.074 | 30 | 0 |
 
-- Range 0.17, standard deviation 0.07 (three points: a rough estimate).
-- The clean pair is a against b (the same process, no patch): 0.059 against 0.148. Per task the best program differs by 2.7 of 15
-  passes on average and by up to 6.
-- The round-0 generation is the highest, and it is the only one that was patched. So part of the gap to a and b is the patch.
+- **Best program per task:** the three generations average 0.146 with a range of 0.17 and a sample SD of 0.085. Pooling the
+  per-task spread (27 values) gives 0.069 for the mean of 9 tasks, so 0.07 to 0.09 is the noise on this metric.
+- **Mean over all 27 programs:** 0.067, SD 0.029 (pooled estimate 0.030). This metric is steadier.
+- The clean pair is a against b (the same process, no patch): 0.059 against 0.148. Per task the best program differs by 2.7 of
+  15 passes on average and by up to 6.
+- The round-0 generation is the highest, and it is the only one that was patched. So part of its gap to a and b is the patch.
 - Execution noise adds to this: re-running identical programs on the same seeds changed 11 of 15 per-seed outcomes for one
   program (earlier control).
 
-**Reading the arms against this.** The difference between two single runs has a standard deviation of about 0.10 under this
-estimate. The final-round gap (0.13) is about 1.3 of those; the round-2 gap points the other way. A comparison needs several
-repetitions per arm, or many more programs per task, before a difference of this size can be called real.
+**Reading the arms against this.** The difference between two single runs has an SD of about 0.10 to 0.12 on the best-program
+metric and about 0.04 on the all-programs metric.
+
+| metric | final-round gap `lex` - `unsolved` | in noise SDs | round-2 gap `lex` - `unsolved` | in noise SDs |
+|---|---|---|---|---|
+| best program per task | +0.133 | 1.1 to 1.3 | -0.140 | -1.2 to -1.4 |
+| mean of all programs | +0.089 | 2.2 | -0.091 | -2.2 |
+
+The gap reaches about 2 SDs on the all-programs metric, but it does so in **both directions** (round 2 favours `unsolved` by the
+same amount). With one run per arm, three noise points and several metrics and rounds looked at, that cannot be read as an
+effect of the selection rule. It does show that library changes or generation variance move the metric by that much between
+rounds. A comparison needs several repetitions per arm, which is what the campaign now running provides.
 
 ## 3. The two libraries
 
