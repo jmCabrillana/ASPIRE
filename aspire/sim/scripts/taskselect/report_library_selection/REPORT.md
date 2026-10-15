@@ -23,7 +23,7 @@ Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/l
 | per round | 3 fresh zero-shot programs per task from the current library, probed on seeds 51-65 (405 trials) |
 | repair | one task per round, up to 5 iterations from its best program, then skill promotion |
 | rounds | 3 repairs, then a final probe (4 probes per arm) |
-| selection | `lex`: highest per-seed split, then most tasks sharing the failure stage, then trace variety. `unsolved`: uniform among tasks with no program passing 15 of 15 |
+| selection | `lex`: highest per-seed split, then most tasks sharing the failure stage, then trace variety (explained, with a worked example, in `LEX.md`). `unsolved`: uniform among tasks with no program passing 15 of 15 |
 | differences between arms | `unsolved` probed with 4 workers, `lex` with 2 (speed only; outcomes are not deterministic at either) |
 
 ## 1. The two arms
