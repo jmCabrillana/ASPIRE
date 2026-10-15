@@ -13,6 +13,8 @@ Then for ROUND = 0 .. {{ROUNDS}}-1:
    For every directory it prints, write K programs candidate_A, candidate_B, ... /code.py for that task (K = state.json k),
    each a fresh zero-shot attempt from the CURRENT skill library (.claude/libero/skills/), in the replay format, differing
    in strategy. One short subagent per task: no replay_trial.py, no evaluation, no other outputs read.
+   Molmo is not available in this setup: programs must never call point_prompt_molmo (it is absent from the
+   namespace and crashes the trial); use SAM3 text/point prompts and geometry instead.
 2. $L probe $RUN --round $ROUND --gpu 0     (every program on seeds 51-65)
 3. $L select $RUN --round $ROUND --rule {{RULE}} --salt r{{REP}}
 4. Repair the selected task with ONE subagent on GPU 0, with the paths in round_$ROUND/selection.json "repair"; they

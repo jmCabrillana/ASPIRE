@@ -28,6 +28,18 @@ PERTURBED = [
     ("libero_goal_with_alphabet_soup", "FLOOR_SCENE1_" + BOWL),
 ]
 
+LIBRARY_9 = [
+    ("libero_goal", "open_the_middle_drawer_of_the_cabinet"),
+    ("libero_goal", "put_the_bowl_on_the_stove"),
+    ("libero_goal", "turn_on_the_stove"),
+    ("libero_spatial", "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate"),
+    ("libero_spatial", "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate"),
+    ("libero_spatial", "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate"),
+    ("libero_object", "pick_up_the_alphabet_soup_and_place_it_in_the_basket"),
+    ("libero_object", "pick_up_the_cream_cheese_and_place_it_in_the_basket"),
+    ("libero_object", "pick_up_the_salad_dressing_and_place_it_in_the_basket"),
+]
+
 FAMILIES: dict[str, dict] = {
     "goal_swap": {
         "relation": "medium",
@@ -72,17 +84,12 @@ FAMILIES: dict[str, dict] = {
     "library_9": {
         "relation": "weak",
         "description": "Library-build experiment: three short tasks from each of the goal, spatial and object suites.",
-        "pairs": [
-            ("libero_goal", "open_the_middle_drawer_of_the_cabinet"),
-            ("libero_goal", "put_the_bowl_on_the_stove"),
-            ("libero_goal", "turn_on_the_stove"),
-            ("libero_spatial", "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate"),
-            ("libero_spatial", "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate"),
-            ("libero_spatial", "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate"),
-            ("libero_object", "pick_up_the_alphabet_soup_and_place_it_in_the_basket"),
-            ("libero_object", "pick_up_the_cream_cheese_and_place_it_in_the_basket"),
-            ("libero_object", "pick_up_the_salad_dressing_and_place_it_in_the_basket"),
-        ],
+        "pairs": LIBRARY_9,
+    },
+    "library_9_swap": {
+        "relation": "weak",
+        "description": "library_9 on the swap suites (object positions randomised per seed), as in the tc1 task_selection runs.",
+        "pairs": [(suite + "_swap", task) for suite, task in LIBRARY_9],
     },
     "three_suites": {
         "relation": "weak",

@@ -425,6 +425,67 @@
         }
       ]
     },
+    "library_9_swap": {
+      "relation": "weak",
+      "description": "library_9 on the swap suites (object positions randomised per seed), as in the tc1 task_selection runs.",
+      "round0": "libero_object_swap/pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+      "tasks": [
+        {
+          "id": "libero_goal_swap/open_the_middle_drawer_of_the_cabinet",
+          "suite": "libero_goal_swap",
+          "task": "open_the_middle_drawer_of_the_cabinet",
+          "language_static": "open the middle drawer of the cabinet"
+        },
+        {
+          "id": "libero_goal_swap/put_the_bowl_on_the_stove",
+          "suite": "libero_goal_swap",
+          "task": "put_the_bowl_on_the_stove",
+          "language_static": "put the bowl on the stove"
+        },
+        {
+          "id": "libero_goal_swap/turn_on_the_stove",
+          "suite": "libero_goal_swap",
+          "task": "turn_on_the_stove",
+          "language_static": "turn on the stove"
+        },
+        {
+          "id": "libero_spatial_swap/pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
+          "suite": "libero_spatial_swap",
+          "task": "pick_up_the_black_bowl_between_the_plate_and_the_ramekin_and_place_it_on_the_plate",
+          "language_static": "pick up the black bowl between the plate and the ramekin and place it on the plate"
+        },
+        {
+          "id": "libero_spatial_swap/pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate",
+          "suite": "libero_spatial_swap",
+          "task": "pick_up_the_black_bowl_next_to_the_ramekin_and_place_it_on_the_plate",
+          "language_static": "pick up the black bowl next to the ramekin and place it on the plate"
+        },
+        {
+          "id": "libero_spatial_swap/pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate",
+          "suite": "libero_spatial_swap",
+          "task": "pick_up_the_black_bowl_from_table_center_and_place_it_on_the_plate",
+          "language_static": "pick up the black bowl from table center and place it on the plate"
+        },
+        {
+          "id": "libero_object_swap/pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+          "suite": "libero_object_swap",
+          "task": "pick_up_the_alphabet_soup_and_place_it_in_the_basket",
+          "language_static": "pick up the alphabet soup and place it in the basket"
+        },
+        {
+          "id": "libero_object_swap/pick_up_the_cream_cheese_and_place_it_in_the_basket",
+          "suite": "libero_object_swap",
+          "task": "pick_up_the_cream_cheese_and_place_it_in_the_basket",
+          "language_static": "pick up the cream cheese and place it in the basket"
+        },
+        {
+          "id": "libero_object_swap/pick_up_the_salad_dressing_and_place_it_in_the_basket",
+          "suite": "libero_object_swap",
+          "task": "pick_up_the_salad_dressing_and_place_it_in_the_basket",
+          "language_static": "pick up the salad dressing and place it in the basket"
+        }
+      ]
+    },
     "three_suites": {
       "relation": "weak",
       "description": "Four short tasks from each of the goal, object and spatial swap suites (three different scenes, shared pick-place / push / drawer / knob skills).",

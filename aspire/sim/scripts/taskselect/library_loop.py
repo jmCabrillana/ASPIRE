@@ -170,7 +170,8 @@ def run_eval(task_dir: Path, suite: str, task: str, seeds: list[int], gpu: str) 
         stale.unlink()
     cmd = [str(REPO / ".venv-libero/bin/python3"), "scripts/libero/evosearch_eval.py", "--iter-dir", str(task_dir),
            "--suite", suite, "--task", task, "--trials", str(len(seeds)), "--trial-seeds", *map(str, seeds),
-           "--sim-gpus", gpu, "--parallel-per-gpu", "2", "--no-highlights"]
+           "--sim-gpus", gpu, "--parallel-per-gpu", os.environ.get("EVAL_PARALLEL", "2"),
+           "--no-highlights"]
     env = dict(os.environ, MUJOCO_GL="egl", TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="1")
     env.pop("ANTHROPIC_API_KEY", None)
     with (task_dir / "eval.log").open("w") as log:

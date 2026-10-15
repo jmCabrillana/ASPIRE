@@ -47,6 +47,7 @@ itself.
 | `goal_swap` | medium | 10 | one scene; ten goals, different skills | main headline family: shared perception, partly shared skills |
 | `drawer_ladder` | medium | 9 | drawer skills of growing composition length over two scenes | disagreement should rise with composition length; long tasks may all-fail |
 | `library_9` | weak | 9 | three short tasks each from libero_goal, libero_spatial, libero_object | the library-build experiment (`library_loop.py`) |
+| `library_9_swap` | weak | 9 | `library_9` on the swap suites (object positions randomised per seed) | the setting of the tc1 task_selection runs; harder, so check round 0 is not all-fail |
 | `three_suites` | weak | 12 | three scenes (goal / object / spatial swap), short tasks | tests whether descriptors predict disagreement across scenes |
 | `mixed_short_skills` | weak | 12 | LIBERO-90 tasks from kitchen, living room, study: drawer, microwave, knob, pick-place, stacking | the hard case: prediction of disagreement must come from skill content |
 | `libero10_long` | weak | 10 | long-horizon two-step tasks, many scenes | likely floor effect (all fail); only usable if the viability probe passes |
