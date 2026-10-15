@@ -25,6 +25,7 @@ OUT = SIM / "outputs"
 LOOP = [str(SIM / ".venv/bin/python3"), "scripts/taskselect/library_loop.py"]
 LIBERO_PY = str(SIM / ".venv-libero/bin/python3")
 POOL = "library_9_swap"
+SEEDS, ROUNDS, TAG = list(range(51, 66)), 3, ""      # set from the command line
 ENV = dict(os.environ, ASPIRE_ROOT=str(SIM), PYTHON_ROOT=str(SIM.parents[1]), MUJOCO_GL="egl",
            TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="1", EVAL_PARALLEL="4")
 ENV.pop("ANTHROPIC_API_KEY", None)
@@ -73,9 +74,9 @@ def wait_for(path: Path, session: str, hours: float, what: str) -> None:
 
 
 COORDINATOR_TAIL = """
-THIS RUN: ROUNDS = 3 (ROUND 0, 1, 2 = three repairs). After ROUND 2's `repaired`, do a final measurement only (no select,
-no repair): `$L activate $RUN --after 3`, `$L plan $RUN --round 3`, write the K programs for the tasks it lists, then
-`$L probe $RUN --round 3 --gpu 0`. Then print `$L report $RUN` and stop.
+THIS RUN: ROUNDS = {n} (ROUND 0 .. {last} = {n} repairs). After ROUND {last}'s `repaired`, do a final measurement only (no
+select, no repair): `$L activate $RUN --after {n}`, `$L plan $RUN --round {n}`, write the K programs for the tasks it lists,
+then `$L probe $RUN --round {n} --gpu 0 --seeds {seeds}`. Then print `$L report $RUN` and stop.
 
 WAITING RULES for every subagent (add these lines after the verbatim repair prompt in your dispatch message): never end
 your turn while an evaluation is running. Wait inside one tool call:
@@ -87,21 +88,30 @@ Never push. Do not change .claude/ other than skills in step 4, and never edit s
 """
 
 
+def run_dir(rule: str, rep: int) -> Path:
+    return OUT / f"library_{rule}{TAG}_r{rep}"
+
+
 def coordinator_prompt(rule: str, rep: int) -> str:
+    seeds = " ".join(map(str, SEEDS))
     tpl = (SIM / "scripts/taskselect/prompts/library_round.md").read_text()
     a, b = tpl.index("Round 0 creates the run"), tpl.index("Then for ROUND")
     start = ("Round 0 is ALREADY done for this run: the run exists, its 27 programs are written and probed, and probe.json is\n"
              "identical to the other arm's of this repetition (round 0 is shared). Do NOT run plan --round 0 and do NOT write\n"
              f"round-0 programs. Pool: {POOL}. The live skill library was already set to L00 (empty). Start at step 3 (select)\n"
              "of ROUND 0.\n")
-    text = tpl[:a] + start + tpl[b:] + COORDINATOR_TAIL
+    tail = COORDINATOR_TAIL.replace("{n}", str(ROUNDS)).replace("{last}", str(ROUNDS - 1)).replace("{seeds}", seeds)
+    text = tpl[:a] + start + tpl[b:] + tail
     head_end = text.index("Every subagent inherits")
     text = text[:text.index("Start:")] + text[head_end:]   # drop the launcher example line from the template header
-    return text.replace("{{RULE}}", rule).replace("{{REP}}", str(rep)).replace("{{ROUNDS}}", "3")
+    text = text.replace("library_{{RULE}}_r{{REP}}", run_dir(rule, rep).name)
+    text = text.replace("--round $ROUND --gpu 0     (every program on seeds 51-65)",
+                        f"--round $ROUND --gpu 0 --seeds {seeds}     (every program on these seeds)")
+    return text.replace("{{RULE}}", rule).replace("{{REP}}", str(rep)).replace("{{ROUNDS}}", str(ROUNDS))
 
 
 def make_round0(rep: int) -> None:
-    base, lex = OUT / f"library_unsolved_r{rep}", OUT / f"library_lex_r{rep}"
+    base, lex = run_dir("unsolved", rep), run_dir("lex", rep)
     if (lex / "round_00" / "probe.json").exists():
         return
     if not (base / "state.json").exists():
@@ -115,18 +125,19 @@ def make_round0(rep: int) -> None:
         wait_for(base / "round_00" / "WRITER_DONE", f"rep{rep}-writer", 1.5, f"rep {rep} writer")
     if not (base / "round_00" / "probe.json").exists():
         log(f"rep {rep}: round-0 probe")
-        loop("probe", str(base), "--round", "0", "--gpu", "0")
+        loop("probe", str(base), "--round", "0", "--gpu", "0", "--seeds", *map(str, SEEDS))
     log(f"rep {rep}: copy round 0 to the lex arm")
     loop("plan", str(lex), "--round", "0", "--pool", POOL, "--library", "empty")
     shutil.copytree(base / "round_00" / "programs", lex / "round_00" / "programs", dirs_exist_ok=True)
-    loop("probe", str(lex), "--round", "0", "--gpu", "0")
+    loop("probe", str(lex), "--round", "0", "--gpu", "0", "--seeds", *map(str, SEEDS))
     if (base / "round_00" / "probe.json").read_bytes() != (lex / "round_00" / "probe.json").read_bytes():
         fail(f"rep {rep}: the two arms' round-0 probe.json differ")
 
 
 def run_arm(rule: str, rep: int) -> None:
-    run = OUT / f"library_{rule}_r{rep}"
-    if (run / "round_03" / "probe.json").exists():
+    run = run_dir(rule, rep)
+    final = run / f"round_{ROUNDS:02d}" / "probe.json"
+    if final.exists():
         return
     loop("activate", str(run), "--after", "0")
     prompt = run / "coordinator.md"
@@ -134,14 +145,19 @@ def run_arm(rule: str, rep: int) -> None:
     session = f"arm-{rule}-r{rep}"
     log(f"rep {rep}: start arm {rule}")
     start_claude(session, prompt)
-    wait_for(run / "round_03" / "probe.json", session, 9, f"arm {rule} r{rep}")
+    wait_for(final, session, 3 * ROUNDS + 6, f"arm {rule} r{rep}")
     log(f"rep {rep}: arm {rule} done")
 
 
 def main() -> None:
+    global SEEDS, ROUNDS, TAG
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--reps", type=int, nargs="+", required=True)
+    p.add_argument("--seeds", type=int, nargs="+", default=SEEDS, help="probe seeds of every round")
+    p.add_argument("--rounds", type=int, default=ROUNDS, help="repairs per arm (one more probe follows)")
+    p.add_argument("--tag", default=TAG, help="added to the experiment ids: library_<rule><tag>_r<k>")
     args = p.parse_args()
+    SEEDS, ROUNDS, TAG = args.seeds, args.rounds, args.tag
     (OUT / "campaign.FAILED").unlink(missing_ok=True)
     for i, rep in enumerate(args.reps):
         make_round0(rep)
