@@ -206,34 +206,28 @@ def fig_heatmap(numbers: dict) -> None:
 
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
-    """Pass rate over all 405 trials: three generations of round 0 from the same empty library, their mean and SD, and the two arms."""
-    gens = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0)), ("fresh batch a", noise["a"]),
-            ("fresh batch b", noise["b"])]
-    arms = [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
+    """Mean and SD over the 27 programs' pass rates: three generations from the same empty library, and the two arms."""
+    rows = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0), INK), ("fresh batch a", noise["a"], GREY),
+            ("fresh batch b", noise["b"], GREY)]
+    rows += [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
     fig, ax = plt.subplots(figsize=(8.4, 3.2))
-    ticks, labels, out = [], [], {}
-    vals = [metric(outcome_array(run), "all") for _, run in gens]
-    for y, ((name, _), v) in enumerate(zip(gens, vals)):
-        ax.plot(v, y, "o", color=INK if "round 0" in name else GREY, markersize=8, markeredgecolor=SURFACE)
-        ticks.append(y); labels.append(name); out[name] = round(v, 3)
-    m, sd = st.fmean(vals), st.stdev(vals)
-    y = len(gens)
-    ax.errorbar(m, y, xerr=sd, fmt="D", color=INK, markersize=8, capsize=5, elinewidth=2.2, markeredgecolor=SURFACE)
-    ax.text(m + sd + 0.004, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
-    ticks.append(y); labels.append("mean ± SD of the 3 generations")
-    out["mean"], out["sd"] = round(m, 3), round(sd, 3)
-    for k, (name, run, color) in enumerate(arms):
-        v = metric(outcome_array(run), "all")
-        ax.plot(v, y + 1.5 + k, "^", color=color, markersize=8, markeredgecolor=SURFACE)
-        ticks.append(y + 1.5 + k); labels.append(name); out[name] = round(v, 3)
+    out = {}
+    for y, (name, run, color) in enumerate(rows):
+        r = outcome_array(run).mean(axis=2).ravel()          # 27 programs, pass rate of each over 15 seeds
+        m, sd = float(r.mean()), float(r.std(ddof=1))
+        y += 0.6 * (y >= 3)
+        ax.errorbar(m, y, xerr=sd, fmt="o", color=color, markersize=8, capsize=4, elinewidth=1.8, markeredgecolor=SURFACE)
+        ax.text(0.62, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
+        out[name] = {"mean": round(m, 3), "sd": round(sd, 3), "n_programs": int(r.size)}
     numbers["noise_all"] = out
-    ax.set_yticks(ticks, labels)
+    ys = [i + 0.6 * (i >= 3) for i in range(len(rows))]
+    ax.set_yticks(ys, [n for n, _, _ in rows])
     ax.invert_yaxis()
-    ax.set_xlim(0, 0.17)
+    ax.set_xlim(0, 0.8)
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
-    ax.set_xlabel("pass rate over the 405 trials (27 programs x 15 trials)")
-    fig.suptitle("Noise floor: three generations from the same empty library, and the two arms",
+    ax.set_xlabel("pass rate of a program over 15 seeds: mean ± SD over the 27 programs")
+    fig.suptitle("Noise floor: all 27 programs, three generations from the same empty library, and the two arms",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)

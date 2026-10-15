@@ -56,20 +56,20 @@ goes 14, 18, **0**, 6; cream cheese in `unsolved` goes 0, 8, **36**, 1. Neither 
 ![noise](figs/fig3_noise_floor.png)
 
 Three independent generations of programs from the same empty library, same pool, same seeds. Each generation is 27
-programs (9 tasks x 3) with 15 trials each, 405 trials. The plot shows the pass rate over those trials, the mean and sample
-SD of the three generations, and the final value of each arm.
+programs (9 tasks x 3) with 15 trials each, 405 trials. The plot shows, for each generation and for the final round of
+each arm, the mean and SD over the 27 programs of each program's pass rate (passes of 15).
 
-| generation | pass rate over 405 trials | passes of 405 | uncaught exceptions |
+| generation | mean ± SD over the 27 programs | passes of 405 | uncaught exceptions |
 |---|---|---|---|
-| round 0 (shared, 9 programs patched by hand) | 0.091 | 37 | 51 |
-| fresh batch a | 0.035 | 14 | 63 |
-| fresh batch b | 0.074 | 30 | 0 |
-| mean ± SD of the 3 generations | 0.067 ± 0.029 | | |
-| `lex`, round 3 | 0.141 | | |
-| `unsolved`, round 3 | 0.052 | | |
+| round 0 (shared, 9 programs patched by hand) | 0.091 ± 0.212 | 37 | 51 |
+| fresh batch a | 0.035 ± 0.087 | 14 | 63 |
+| fresh batch b | 0.074 ± 0.119 | 30 | 0 |
+| `lex`, round 3 | 0.141 ± 0.250 | | |
+| `unsolved`, round 3 | 0.052 ± 0.167 | | |
 
-- The SD across generations is 0.029 (pooled per-task estimate 0.030). This is the noise on one run.
-- Both arms' final values lie within about 2.6 SD of the mean (`lex` +2.5 SD, `unsolved` -0.5 SD).
+- The SD is large against the mean: most programs pass 0 of 15 and a few pass most seeds.
+- The mean of the three generations is 0.067 (SD between generations 0.029; the pooled per-task estimate is 0.030). That
+  is the noise on one run's mean.
 - The clean pair is a against b (same process, no patch): 0.035 against 0.074 (14 against 30 passes of 405).
 - The round-0 generation is the highest, and it is the only one that was patched. So part of its gap to a and b is the patch.
 - Execution noise adds to this: re-running identical programs on the same seeds changed 11 of 15 per-seed outcomes for one

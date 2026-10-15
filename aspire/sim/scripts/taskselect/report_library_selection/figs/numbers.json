@@ -95,12 +95,30 @@
     }
   },
   "noise_all": {
-    "round 0 (shared, patched)": 0.091,
-    "fresh batch a": 0.035,
-    "fresh batch b": 0.074,
-    "mean": 0.067,
-    "sd": 0.029,
-    "lex arm, round 3": 0.141,
-    "unsolved arm, round 3": 0.052
+    "round 0 (shared, patched)": {
+      "mean": 0.091,
+      "sd": 0.212,
+      "n_programs": 27
+    },
+    "fresh batch a": {
+      "mean": 0.035,
+      "sd": 0.087,
+      "n_programs": 27
+    },
+    "fresh batch b": {
+      "mean": 0.074,
+      "sd": 0.119,
+      "n_programs": 27
+    },
+    "lex arm, round 3": {
+      "mean": 0.141,
+      "sd": 0.25,
+      "n_programs": 27
+    },
+    "unsolved arm, round 3": {
+      "mean": 0.052,
+      "sd": 0.167,
+      "n_programs": 27
+    }
   }
 }
