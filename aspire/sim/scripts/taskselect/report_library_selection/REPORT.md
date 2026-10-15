@@ -117,6 +117,21 @@ Why a better element appeared at all:
 - **Worker count** differed between the arms (2 against 4); a control showed it is not a source of bias.
 - **One run per arm.** Nothing here is a significance statement.
 
+## Where things are, by experiment id
+
+All paths are under `aspire/sim/outputs/` (gitignored). The live directory `.claude/libero/skills/` is only a working
+copy: each run saves its own libraries, so it is restored to the committed version when no run is active.
+
+| experiment id | what it is | libraries | probes and selections | repairs |
+|---|---|---|---|---|
+| `library_lex_r1` | arm `lex`, 3 repairs + final probe | `library/L00` (empty) to `L03` | `round_NN/probe.json`, `round_NN/selection.json` | `round_NN/fixloop/<suite>/<task>/findings.md`, `skill_promotions.jsonl` |
+| `library_unsolved_r1` | arm `unsolved` (also holds the shared round 0) | `library/L00` to `L03` | same | same |
+| `library_noise_a`, `library_noise_b` | fresh round-0 generations from the empty library | `library/L00` | `round_00/probe.json` | none |
+| `skill_snapshots/family_start` | skills after the first single-task fix loop; equals the committed `.claude/libero/skills` | 5 files | none | none |
+
+Each run also has `state.json` (pool, rounds, settings) and `coordinator.md` (the exact prompt it was started with).
+Round 0 of `library_lex_r1` is a byte-identical copy of the shared one (`probe.json` compared with `cmp`).
+
 ## 6. What this supports and what comes next
 
 Supported: the pipeline runs end to end; a perception-level skill can raise a task's pass rate in later rounds; library edits can
