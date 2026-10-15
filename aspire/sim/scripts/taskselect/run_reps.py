@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Repetitions of the lex-vs-unsolved library build, unattended.
+
+  .venv/bin/python3 scripts/taskselect/run_reps.py --reps 2 3 4
+
+Per repetition k (same settings as library_lex_r1 / library_unsolved_r1, plus the API facts in the writers' prompts):
+  1. outputs/library_unsolved_r<k>: plan round 0 from the empty library, a writer session writes 27 programs, probe.
+  2. outputs/library_lex_r<k>: round 0 copied from it (probe.json identical), so the two arms are paired.
+  3. each arm in its own Claude coordinator session (tmux), 3 repairs + a final probe; arm order alternates with k.
+Everything is logged to outputs/campaign.log. A failure writes outputs/campaign.FAILED and stops. Rerunning skips finished steps.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SIM = Path(__file__).resolve().parents[2]
+OUT = SIM / "outputs"
+LOOP = [str(SIM / ".venv/bin/python3"), "scripts/taskselect/library_loop.py"]
+LIBERO_PY = str(SIM / ".venv-libero/bin/python3")
+POOL = "library_9_swap"
+ENV = dict(os.environ, ASPIRE_ROOT=str(SIM), PYTHON_ROOT=str(SIM.parents[1]), MUJOCO_GL="egl",
+           TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD="1", EVAL_PARALLEL="4")
+ENV.pop("ANTHROPIC_API_KEY", None)
+
+
+def log(msg: str) -> None:
+    line = f"{time.strftime('%m-%d %H:%M:%S')} {msg}"
+    print(line, flush=True)
+    with (OUT / "campaign.log").open("a") as f:
+        f.write(line + "\n")
+
+
+def fail(msg: str) -> None:
+    log("FAILED: " + msg)
+    (OUT / "campaign.FAILED").write_text(msg + "\n")
+    sys.exit(1)
+
+
+def loop(*args: str) -> str:
+    r = subprocess.run(LOOP + list(args), cwd=SIM, env=ENV, capture_output=True, text=True)
+    if r.returncode:
+        fail(f"library_loop {' '.join(args)}: {r.stdout[-400:]} {r.stderr[-400:]}")
+    return r.stdout
+
+
+def start_claude(session: str, prompt_file: Path) -> None:
+    subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True)
+    env = " ".join(f"{k}={v}" for k, v in ENV.items() if k in ("ASPIRE_ROOT", "PYTHON_ROOT", "MUJOCO_GL",
+                                                               "TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "EVAL_PARALLEL"))
+    cmd = (f"unset ANTHROPIC_API_KEY; export {env} PATH=$HOME/.local/bin:$PATH; "
+           f"claude --model claude-sonnet-5 \"$(cat {prompt_file})\"; bash")
+    subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", str(SIM), cmd], check=True)
+
+
+def wait_for(path: Path, session: str, hours: float, what: str) -> None:
+    deadline = time.time() + hours * 3600
+    while not path.exists():
+        if time.time() > deadline:
+            fail(f"{what}: {path.name} not there after {hours} h")
+        if subprocess.run(["tmux", "has-session", "-t", session], capture_output=True).returncode:
+            if path.exists():
+                break
+            fail(f"{what}: session {session} ended before {path.name}")
+        time.sleep(30)
+    subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True)
+
+
+COORDINATOR_TAIL = """
+THIS RUN: ROUNDS = 3 (ROUND 0, 1, 2 = three repairs). After ROUND 2's `repaired`, do a final measurement only (no select,
+no repair): `$L activate $RUN --after 3`, `$L plan $RUN --round 3`, write the K programs for the tasks it lists, then
+`$L probe $RUN --round 3 --gpu 0`. Then print `$L report $RUN` and stop.
+
+WAITING RULES for every subagent (add these lines after the verbatim repair prompt in your dispatch message): never end
+your turn while an evaluation is running. Wait inside one tool call:
+  until [ -f <iter_dir>/iter_summary.json ]; do sleep 10; done      (Bash timeout 600000; repeat the call until it returns)
+A crashed evaluation may be re-run once as the repair prompt says. If a subagent returns without a kept program or without
+findings.md, do NOT dispatch a second one: record it with `repaired` if the iterations allow, otherwise stop and report.
+
+Never push. Do not change .claude/ other than skills in step 4, and never edit scripts/taskselect/.
+"""
+
+
+def coordinator_prompt(rule: str, rep: int) -> str:
+    tpl = (SIM / "scripts/taskselect/prompts/library_round.md").read_text()
+    a, b = tpl.index("Round 0 creates the run"), tpl.index("Then for ROUND")
+    start = ("Round 0 is ALREADY done for this run: the run exists, its 27 programs are written and probed, and probe.json is\n"
+             "identical to the other arm's of this repetition (round 0 is shared). Do NOT run plan --round 0 and do NOT write\n"
+             f"round-0 programs. Pool: {POOL}. The live skill library was already set to L00 (empty). Start at step 3 (select)\n"
+             "of ROUND 0.\n")
+    text = tpl[:a] + start + tpl[b:] + COORDINATOR_TAIL
+    head_end = text.index("Every subagent inherits")
+    text = text[:text.index("Start:")] + text[head_end:]   # drop the launcher example line from the template header
+    return text.replace("{{RULE}}", rule).replace("{{REP}}", str(rep)).replace("{{ROUNDS}}", "3")
+
+
+def make_round0(rep: int) -> None:
+    base, lex = OUT / f"library_unsolved_r{rep}", OUT / f"library_lex_r{rep}"
+    if (lex / "round_00" / "probe.json").exists():
+        return
+    if not (base / "state.json").exists():
+        log(f"rep {rep}: plan round 0 (empty library)")
+        loop("plan", str(base), "--round", "0", "--pool", POOL, "--library", "empty")
+    if not (base / "round_00" / "WRITER_DONE").exists():
+        prompt = base / "round0_writer.md"
+        prompt.write_text((SIM / "scripts/taskselect/prompts/round0_writer.md").read_text().replace("{{RUN}}", f"outputs/{base.name}"))
+        log(f"rep {rep}: round-0 writer session")
+        start_claude(f"rep{rep}-writer", prompt)
+        wait_for(base / "round_00" / "WRITER_DONE", f"rep{rep}-writer", 1.5, f"rep {rep} writer")
+    if not (base / "round_00" / "probe.json").exists():
+        log(f"rep {rep}: round-0 probe")
+        loop("probe", str(base), "--round", "0", "--gpu", "0")
+    log(f"rep {rep}: copy round 0 to the lex arm")
+    loop("plan", str(lex), "--round", "0", "--pool", POOL, "--library", "empty")
+    shutil.copytree(base / "round_00" / "programs", lex / "round_00" / "programs", dirs_exist_ok=True)
+    loop("probe", str(lex), "--round", "0", "--gpu", "0")
+    if (base / "round_00" / "probe.json").read_bytes() != (lex / "round_00" / "probe.json").read_bytes():
+        fail(f"rep {rep}: the two arms' round-0 probe.json differ")
+
+
+def run_arm(rule: str, rep: int) -> None:
+    run = OUT / f"library_{rule}_r{rep}"
+    if (run / "round_03" / "probe.json").exists():
+        return
+    loop("activate", str(run), "--after", "0")
+    prompt = run / "coordinator.md"
+    prompt.write_text(coordinator_prompt(rule, rep))
+    session = f"arm-{rule}-r{rep}"
+    log(f"rep {rep}: start arm {rule}")
+    start_claude(session, prompt)
+    wait_for(run / "round_03" / "probe.json", session, 9, f"arm {rule} r{rep}")
+    log(f"rep {rep}: arm {rule} done")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--reps", type=int, nargs="+", required=True)
+    args = p.parse_args()
+    (OUT / "campaign.FAILED").unlink(missing_ok=True)
+    for i, rep in enumerate(args.reps):
+        make_round0(rep)
+        order = ("lex", "unsolved") if i % 2 == 0 else ("unsolved", "lex")
+        for rule in order:
+            run_arm(rule, rep)
+    log("campaign done")
+    (OUT / "campaign.DONE").write_text(time.strftime("%c") + "\n")
+
+
+if __name__ == "__main__":
+    main()

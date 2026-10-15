@@ -15,6 +15,8 @@ Then for ROUND = 0 .. {{ROUNDS}}-1:
    in strategy. One short subagent per task: no replay_trial.py, no evaluation, no other outputs read.
    Molmo is not available in this setup: programs must never call point_prompt_molmo (it is absent from the
    namespace and crashes the trial); use SAM3 text/point prompts and geometry instead.
+   API facts every program must respect: segment_sam3_point_prompt(rgb, point_coords) takes ONE (x, y) pair of floats,
+   never a list of points (CLAUDE.md's "points" wording is wrong); start every program with `import numpy as np`.
 2. $L probe $RUN --round $ROUND --gpu 0     (every program on seeds 51-65)
 3. $L select $RUN --round $ROUND --rule {{RULE}} --salt r{{REP}}
 4. Repair the selected task with ONE subagent on GPU 0, with the paths in round_$ROUND/selection.json "repair"; they
