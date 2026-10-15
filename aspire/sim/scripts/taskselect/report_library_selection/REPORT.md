@@ -56,22 +56,20 @@ goes 14, 18, **0**, 6; cream cheese in `unsolved` goes 0, 8, **36**, 1. Neither 
 ![noise](figs/fig3_noise_floor.png)
 
 Three independent generations of programs from the same empty library, same pool, same seeds. Each generation is 27
-programs (9 tasks x 3) with 15 trials each, 405 trials. Each value is shown with its 95% interval (bootstrap over the 9
-tasks, then over each program's 15 seeds; 4000 resamples). The interval of one
-generation covers task and seed sampling only; the spread between generations is extra.
+programs (9 tasks x 3) with 15 trials each, 405 trials. The plot shows the pass rate over those trials, the mean and sample
+SD of the three generations, and the final value of each arm.
 
-| generation | pass rate over 405 trials [95%] | passes of 405 | uncaught exceptions |
+| generation | pass rate over 405 trials | passes of 405 | uncaught exceptions |
 |---|---|---|---|
-| round 0 (shared, 9 programs patched by hand) | 0.091 [0.020, 0.175] | 37 | 51 |
-| fresh batch a | 0.035 [0.000, 0.094] | 14 | 63 |
-| fresh batch b | 0.074 [0.027, 0.136] | 30 | 0 |
-| mean of the 3 generations (t, 2 dof) | 0.067 [0.000, 0.139] | | |
-| `lex`, round 3 | 0.141 [0.037, 0.296] | | |
-| `unsolved`, round 3 | 0.052 [0.007, 0.119] | | |
+| round 0 (shared, 9 programs patched by hand) | 0.091 | 37 | 51 |
+| fresh batch a | 0.035 | 14 | 63 |
+| fresh batch b | 0.074 | 30 | 0 |
+| mean ± SD of the 3 generations | 0.067 ± 0.029 | | |
+| `lex`, round 3 | 0.141 | | |
+| `unsolved`, round 3 | 0.052 | | |
 
-- Sample SD across the three generations: 0.029 (pooled estimate 0.030).
-- Every interval is wide. The two arms' final values lie inside each other's intervals and inside the interval of the
-  generation mean.
+- The SD across generations is 0.029 (pooled per-task estimate 0.030). This is the noise on one run.
+- Both arms' final values lie within about 2.6 SD of the mean (`lex` +2.5 SD, `unsolved` -0.5 SD).
 - The clean pair is a against b (same process, no patch): 0.035 against 0.074 (14 against 30 passes of 405).
 - The round-0 generation is the highest, and it is the only one that was patched. So part of its gap to a and b is the patch.
 - Execution noise adds to this: re-running identical programs on the same seeds changed 11 of 15 per-seed outcomes for one

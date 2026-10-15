@@ -206,54 +206,36 @@ def fig_heatmap(numbers: dict) -> None:
 
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
-    """Each value with its 95% interval: three generations of round 0 from the same empty library, and the two arms."""
+    """Pass rate over all 405 trials: three generations of round 0 from the same empty library, their mean and SD, and the two arms."""
     gens = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0)), ("fresh batch a", noise["a"]),
             ("fresh batch b", noise["b"])]
     arms = [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
-    fig, ax = plt.subplots(figsize=(8.4, 3.4))
-    y = 0.0
-    ticks, labels = [], []
-    for kind, group in [("all", "all 27 programs (9 tasks x 3 programs), 15 trials each = 405 trials")]:
-        ax.text(0.003, y - 0.7, group, fontsize=10, fontweight="bold", color=INK, va="center")
-        y += 0.0
-        vals = []
-        for name, run in gens:
-            a = outcome_array(run)
-            v, (lo, hi) = metric(a, kind), boot_ci(a, kind)
-            vals.append(v)
-            ax.errorbar(v, y, xerr=[[v - lo], [hi - v]], fmt="o", color=INK if "round 0" in name else GREY, markersize=7,
-                        capsize=4, elinewidth=1.6, markeredgecolor=SURFACE)
-            ticks.append(y); labels.append(name)
-            numbers.setdefault(f"noise_{kind}", {})[name] = {"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]}
-            y += 1
-        m, sd = st.fmean(vals), st.stdev(vals)
-        half = T_975_2DOF * sd / len(vals) ** 0.5
-        ax.errorbar(m, y, xerr=[[m - max(m - half, 0)], [half]], fmt="D", color=INK, markersize=8, capsize=5, elinewidth=2.4,
-                    markeredgecolor=SURFACE)
-        ticks.append(y); labels.append("mean of the 3 generations (t interval)")
-        numbers[f"noise_{kind}"]["mean of 3 generations"] = {"value": round(m, 3), "ci95_t": [round(max(m - half, 0), 3), round(m + half, 3)],
-                                                             "sd": round(sd, 3)}
-        y += 1.0
-        for name, run, color in arms:
-            a = outcome_array(run)
-            v, (lo, hi) = metric(a, kind), boot_ci(a, kind)
-            ax.errorbar(v, y, xerr=[[v - lo], [hi - v]], fmt="^", color=color, markersize=8, capsize=4, elinewidth=1.6,
-                        markeredgecolor=SURFACE)
-            ticks.append(y); labels.append(name)
-            numbers[f"noise_{kind}"][name] = {"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]}
-            y += 1
-        y += 1.4
+    fig, ax = plt.subplots(figsize=(8.4, 3.2))
+    ticks, labels, out = [], [], {}
+    vals = [metric(outcome_array(run), "all") for _, run in gens]
+    for y, ((name, _), v) in enumerate(zip(gens, vals)):
+        ax.plot(v, y, "o", color=INK if "round 0" in name else GREY, markersize=8, markeredgecolor=SURFACE)
+        ticks.append(y); labels.append(name); out[name] = round(v, 3)
+    m, sd = st.fmean(vals), st.stdev(vals)
+    y = len(gens)
+    ax.errorbar(m, y, xerr=sd, fmt="D", color=INK, markersize=8, capsize=5, elinewidth=2.2, markeredgecolor=SURFACE)
+    ax.text(m + sd + 0.004, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
+    ticks.append(y); labels.append("mean ± SD of the 3 generations")
+    out["mean"], out["sd"] = round(m, 3), round(sd, 3)
+    for k, (name, run, color) in enumerate(arms):
+        v = metric(outcome_array(run), "all")
+        ax.plot(v, y + 1.5 + k, "^", color=color, markersize=8, markeredgecolor=SURFACE)
+        ticks.append(y + 1.5 + k); labels.append(name); out[name] = round(v, 3)
+    numbers["noise_all"] = out
     ax.set_yticks(ticks, labels)
     ax.invert_yaxis()
-    ax.set_xlim(0, 0.32)
+    ax.set_xlim(0, 0.17)
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
-    ax.set_xlabel("pass rate over the 405 trials (27 programs x 15 trials), with 95% interval")
-    fig.suptitle("Noise floor: three generations from the same empty library, and the two arms (95% intervals)",
+    ax.set_xlabel("pass rate over the 405 trials (27 programs x 15 trials)")
+    fig.suptitle("Noise floor: three generations from the same empty library, and the two arms",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
-    fig.text(0.01, 0.01, "Intervals on a single generation: bootstrap over tasks and seeds (4000 resamples). Diamond: mean of the three\n"
-             "generations with a Student t interval (2 degrees of freedom), clipped at 0.", fontsize=8, color=MUTED)
-    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)
     plt.close(fig)
 
