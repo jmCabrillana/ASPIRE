@@ -35,6 +35,50 @@ plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "sa
                      "text.color": INK, "font.size": 10, "axes.spines.top": False, "axes.spines.right": False})
 
 
+RNG = np.random.default_rng(0)
+T_975_2DOF = 4.303      # Student t, 97.5th percentile, 2 degrees of freedom (three generations)
+
+
+def outcome_array(tasks: dict) -> np.ndarray:
+    """(tasks, programs, seeds) array of 0/1 outcomes, tasks in probe order."""
+    return np.array([[row for row in t["outcomes"].values()] for t in tasks.values()], dtype=float)
+
+
+def metric(a: np.ndarray, kind: str) -> float:
+    rates = a.mean(axis=2)
+    return float((rates.max(axis=1) if kind == "best" else rates.mean(axis=1)).mean())
+
+
+def boot_ci(a: np.ndarray, kind: str, n: int = 4000) -> tuple[float, float]:
+    """95% percentile interval of the 9-task mean, resampling tasks and then each program's seeds."""
+    t, k, s = a.shape
+    out = np.empty(n)
+    for i in range(n):
+        ts = RNG.integers(0, t, t)
+        idx = RNG.integers(0, s, (t, k, s))
+        g = np.take_along_axis(a[ts], idx, axis=2).mean(axis=2)
+        out[i] = (g.max(axis=1) if kind == "best" else g.mean(axis=1)).mean()
+    lo, hi = np.percentile(out, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
+def boot_diff_ci(a: np.ndarray, b: np.ndarray, kind: str, n: int = 4000) -> tuple[float, float]:
+    """95% interval of metric(a) - metric(b): the same tasks resampled for both, seeds resampled independently."""
+    t, k, s = a.shape
+    out = np.empty(n)
+    for i in range(n):
+        ts = RNG.integers(0, t, t)
+        vals = []
+        for x in (a, b):
+            idx = RNG.integers(0, s, (t, k, s))
+            g = np.take_along_axis(x[ts], idx, axis=2).mean(axis=2)
+            vals.append((g.max(axis=1) if kind == "best" else g.mean(axis=1)).mean())
+        out[i] = vals[0] - vals[1]
+    lo, hi = np.percentile(out, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
+
 def load_probe(run: str, r: int) -> dict:
     return json.loads((OUT / run / f"round_{r:02d}" / "probe.json").read_text())["tasks"]
 
@@ -82,52 +126,48 @@ def style(ax, ylabel=None, xlabel=None):
 def fig_arms(numbers: dict, noise: dict) -> None:
     probes = {a: [load_probe(d, r) for r in range(4)] for a, (d, _, _) in ARMS.items()}
     x = np.arange(4)
-    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.2))
-
-    ax = axes[0]
-    for a, (_, color, label) in ARMS.items():
-        y = [best_rate(p) for p in probes[a]]
-        ax.plot(x, y, color=color, linewidth=2, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=2)
-        ax.text(3.08, y[-1], label, color=INK, va="center", fontsize=9)
-        numbers[f"best_rate_{a}"] = [round(v, 3) for v in y]
-    if len(noise) == 2:
-        vals = [best_rate(noise["a"]), best_rate(noise["b"]), best_rate(load_probe("library_unsolved_r1", 0))]
-        ax.axhspan(min(vals), max(vals), color=GREY, alpha=0.18, linewidth=0)
-        ax.text(1.0, min(vals) + 0.006, "range of 3 independent round-0\ngenerations (same empty library)", color=MUTED, fontsize=8)
-    ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
-    ax.set_xlim(-0.2, 4.2)
-    ax.set_ylim(0, 0.36)
-    style(ax, "mean best-program pass rate (9 tasks)", "round (library after n repairs)")
-    ax.set_title("Mean best-program rate", loc="left", fontsize=11, fontweight="bold")
-
-    ax = axes[1]
-    for a, (_, color, label) in ARMS.items():
-        y = [mean_rate(p) for p in probes[a]]
-        ax.plot(x, y, color=color, linewidth=2, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=2)
-        ax.text(3.08, y[-1], label, color=INK, va="center", fontsize=9)
-        numbers[f"mean_rate_{a}"] = [round(v, 3) for v in y]
-    ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
-    ax.set_xlim(-0.2, 4.2)
-    ax.set_ylim(0, 0.36)
-    style(ax, "mean pass rate over all programs", "round")
-    ax.set_title("Mean over all 27 programs", loc="left", fontsize=11, fontweight="bold")
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.4))
+    for ax, kind, title, ylabel in [(axes[0], "best", "Best program per task", "mean pass rate over the 9 tasks"),
+                                    (axes[1], "all", "Mean over all 27 programs", "mean pass rate over the 9 tasks")]:
+        for j, (a_, (_, color, label)) in enumerate(ARMS.items()):
+            arrs = [outcome_array(p) for p in probes[a_]]
+            y = [metric(v, kind) for v in arrs]
+            ci = [boot_ci(v, kind) for v in arrs]
+            xs = x + (j - 0.5) * 0.12
+            ax.errorbar(xs, y, yerr=[[v - lo for v, (lo, _) in zip(y, ci)], [hi - v for v, (_, hi) in zip(y, ci)]], color=color,
+                        linewidth=1.8, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=1.5,
+                        elinewidth=1.1, capsize=3, label=label)
+            numbers[f"{kind}_{a_}"] = [{"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]} for v, (lo, hi) in zip(y, ci)]
+        ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
+        ax.set_xlim(-0.35, 3.35)
+        ax.set_ylim(0, 0.55 if kind == "best" else 0.36)
+        style(ax, ylabel, "round (library after n repairs)")
+        ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
+        ax.legend(frameon=False, fontsize=8.5, loc="upper left")
 
     ax = axes[2]
-    for a, (_, color, label) in ARMS.items():
-        y = [100 * stage_share(p, "crash") for p in probes[a]]
-        ax.plot(x, y, color=color, linewidth=2, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=2)
-        ax.text(3.08, y[-1], label, color=INK, va="center", fontsize=9)
-        numbers[f"crash_pct_{a}"] = [round(v, 1) for v in y]
+    for a_, (_, color, label) in ARMS.items():
+        y = [100 * stage_share(p, "crash") for p in probes[a_]]
+        ax.plot(x, y, color=color, linewidth=2, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=2, label=label)
+        numbers[f"crash_pct_{a_}"] = [round(v, 1) for v in y]
     ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
-    ax.set_xlim(-0.2, 4.2)
+    ax.set_xlim(-0.35, 3.35)
     ax.set_ylim(0, 50)
     style(ax, "% of trials that crash", "round")
     ax.set_title("Crashed trials", loc="left", fontsize=11, fontweight="bold")
-    ax.annotate("point-prompt API bug:\n120 / 90 / 60 trials in lex,\n30 / 15 / 0 in unsolved", xy=(1, 43), xytext=(1.25, 38),
+    ax.legend(frameon=False, fontsize=8.5, loc="upper right")
+    ax.annotate("point-prompt API bug:\n120 / 90 / 60 trials in lex,\n30 / 15 / 0 in unsolved", xy=(1, 43), xytext=(1.3, 33),
                 fontsize=8, color=MUTED, arrowprops={"arrowstyle": "-", "color": GRID})
 
-    fig.suptitle("Library build with task selection: lex vs random-among-unsolved, one run each", x=0.01, ha="left",
-                 fontsize=12, fontweight="bold")
+    diffs = {}
+    for kind in ("best", "all"):
+        for r in range(1, 4):
+            lo, hi = boot_diff_ci(outcome_array(probes["lex"][r]), outcome_array(probes["unsolved"][r]), kind)
+            d = metric(outcome_array(probes["lex"][r]), kind) - metric(outcome_array(probes["unsolved"][r]), kind)
+            diffs[f"{kind}_round{r}"] = {"lex_minus_unsolved": round(d, 3), "ci95": [round(lo, 3), round(hi, 3)]}
+    numbers["arm_difference"] = diffs
+    fig.suptitle("Library build with task selection: lex vs random-among-unsolved, one run each (points with 95% intervals)",
+                 x=0.01, ha="left", fontsize=12, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig1_arms_by_round.png", dpi=160)
     plt.close(fig)
@@ -166,43 +206,54 @@ def fig_heatmap(numbers: dict) -> None:
 
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
-    """One plot: three independent generations of round 0 from the same empty library, two ways of averaging."""
-    gens = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0), "o", INK),
-            ("fresh batch a", noise["a"], "D", GREY), ("fresh batch b", noise["b"], "s", GREY)]
-    tasks = list(gens[0][1])
-
-    def value(run: dict, t: str, kind: str) -> float:
-        rows = [sum(r) for r in run[t]["outcomes"].values()]
-        return (max(rows) if kind == "best" else st.fmean(rows)) / 15
-
-    kinds = [("best", "best of the 3 programs\nper task"), ("all", "mean of all\n27 programs")]
-    arms_final = {a: load_probe(d, 3) for a, (d, _, _) in ARMS.items()}
-    fig, ax = plt.subplots(figsize=(7.6, 5.6))
-    stats: list[str] = []
-    for x, (kind, label) in enumerate([(k, l) for k, l in kinds]):
-        per_gen = [st.fmean(value(run, t, kind) for t in tasks) for _, run, _, _ in gens]
-        mean, sd = st.fmean(per_gen), st.stdev(per_gen)
-        pooled = (st.fmean(st.variance([value(run, t, kind) for _, run, _, _ in gens]) for t in tasks)) ** 0.5 / len(tasks) ** 0.5
-        ax.add_patch(plt.Rectangle((x - 0.17, mean - sd), 0.34, 2 * sd, color=GRID, zorder=1))
-        ax.plot([x - 0.17, x + 0.17], [mean, mean], color=INK, linewidth=2, zorder=2)
-        for j, ((name, _, marker, color), v) in enumerate(zip(gens, per_gen)):
-            ax.scatter(x + (j - 1) * 0.09, v, s=70, marker=marker, color=color, edgecolor=SURFACE, linewidth=1.3, zorder=3,
-                       label=name if x == 0 else None)
-        for a_, (_, color, _) in ARMS.items():
-            v = best_rate(arms_final[a_]) if kind == "best" else mean_rate(arms_final[a_])
-            ax.scatter(x + 0.30, v, s=60, marker="^", color=color, edgecolor=SURFACE, linewidth=1.2, zorder=3,
-                       label=f"{a_} arm, final round" if x == 0 else None)
-        stats.append(f"{label}\n\nmean {mean:.3f}\nSD across generations {sd:.3f}\nper-task pooled estimate {pooled:.3f}")
-        numbers[f"noise_{kind}"] = {"generations": [round(v, 3) for v in per_gen], "mean": round(mean, 3),
-                                    "sd_across_generations": round(sd, 3), "sd_from_pooled_task_variance": round(pooled, 3)}
-    ax.set_xticks([0, 1], stats)
-    ax.set_xlim(-0.55, 1.55)
-    ax.set_ylim(0, 0.32)
-    style(ax, "mean pass rate over the 9 tasks")
-    ax.legend(frameon=False, loc="upper right", fontsize=8.5)
-    ax.set_title("Noise floor: same empty library, three independent generations\n(grey bar = mean \u00b1 1 SD; triangles = the two arms after 3 repairs)",
-                 loc="left", fontsize=10.5, fontweight="bold")
-    fig.tight_layout()
+    """Each value with its 95% interval: three generations of round 0 from the same empty library, and the two arms."""
+    gens = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0)), ("fresh batch a", noise["a"]),
+            ("fresh batch b", noise["b"])]
+    arms = [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
+    y = 0.0
+    ticks, labels = [], []
+    for kind, group in [("best", "best of the 3 programs per task"), ("all", "mean of all 27 programs")]:
+        ax.text(0.003, y - 0.7, group, fontsize=10, fontweight="bold", color=INK, va="center")
+        y += 0.0
+        vals = []
+        for name, run in gens:
+            a = outcome_array(run)
+            v, (lo, hi) = metric(a, kind), boot_ci(a, kind)
+            vals.append(v)
+            ax.errorbar(v, y, xerr=[[v - lo], [hi - v]], fmt="o", color=INK if "round 0" in name else GREY, markersize=7,
+                        capsize=4, elinewidth=1.6, markeredgecolor=SURFACE)
+            ticks.append(y); labels.append(name)
+            numbers.setdefault(f"noise_{kind}", {})[name] = {"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]}
+            y += 1
+        m, sd = st.fmean(vals), st.stdev(vals)
+        half = T_975_2DOF * sd / len(vals) ** 0.5
+        ax.errorbar(m, y, xerr=[[m - max(m - half, 0)], [half]], fmt="D", color=INK, markersize=8, capsize=5, elinewidth=2.4,
+                    markeredgecolor=SURFACE)
+        ticks.append(y); labels.append("mean of the 3 generations (t interval)")
+        numbers[f"noise_{kind}"]["mean of 3 generations"] = {"value": round(m, 3), "ci95_t": [round(max(m - half, 0), 3), round(m + half, 3)],
+                                                             "sd": round(sd, 3)}
+        y += 1.0
+        for name, run, color in arms:
+            a = outcome_array(run)
+            v, (lo, hi) = metric(a, kind), boot_ci(a, kind)
+            ax.errorbar(v, y, xerr=[[v - lo], [hi - v]], fmt="^", color=color, markersize=8, capsize=4, elinewidth=1.6,
+                        markeredgecolor=SURFACE)
+            ticks.append(y); labels.append(name)
+            numbers[f"noise_{kind}"][name] = {"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]}
+            y += 1
+        y += 1.4
+    ax.set_yticks(ticks, labels)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 0.55)
+    ax.grid(axis="x", color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.set_xlabel("mean pass rate over the 9 tasks, with 95% interval")
+    fig.suptitle("Noise floor: three generations from the same empty library, and the two arms (95% intervals)",
+                 x=0.01, ha="left", fontsize=11, fontweight="bold")
+    fig.text(0.01, 0.01, "Intervals on a single generation: bootstrap over tasks and seeds (4000 resamples). Diamond: mean of the three\n"
+             "generations with a Student t interval (2 degrees of freedom), clipped at 0.", fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)
     plt.close(fig)
 

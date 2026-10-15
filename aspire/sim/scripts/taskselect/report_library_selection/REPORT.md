@@ -8,7 +8,8 @@ Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/l
 - We built a skill library from nothing in two ways, one run each: the next task to repair chosen by
   **disagreement** (`lex`), and chosen **at random among unsolved tasks** (`unsolved`).
 - **No difference can be claimed.** The final mean best-program rate is 0.274 (`lex`) against 0.141 (`unsolved`), but three
-  independent generations of the *same* empty library already differ by 0.17 (0.059 to 0.230).
+  independent generations of the *same* empty library already differ by 0.17 (0.059 to 0.230), and every 95% interval of the
+  gap contains 0.
 - Two clear library effects were seen, one in each arm, and both are real mechanisms, not selection effects:
   a perception rule that was used and helped, and a perception prompt that helped and then was not reused.
 - A pipeline defect (point-prompt API misuse, never fixed in the writers' instructions) crashed up to 30% of the `lex` trials in
@@ -52,18 +53,25 @@ The per-task view shows how unstable single tasks are: salad dressing in `lex` g
 
 ![noise](figs/fig3_noise_floor.png)
 
-Three independent generations of programs from the same empty library, same pool, same seeds:
+Three independent generations of programs from the same empty library, same pool, same seeds. Each value is shown with
+its 95% interval (bootstrap over the 9 tasks, then over each program's 15 seeds; 4000 resamples). The interval of one
+generation covers task and seed sampling only; the spread between generations is extra.
 
-| generation | mean best rate | mean rate | passes of 405 | trials with an uncaught exception |
+| generation | mean best rate [95%] | mean rate, all programs [95%] | passes of 405 | uncaught exceptions |
 |---|---|---|---|---|
-| round 0 (shared, 9 programs patched by hand) | 0.230 | 0.091 | 37 | 51 |
-| fresh batch a | 0.059 | 0.035 | 14 | 63 |
-| fresh batch b | 0.148 | 0.074 | 30 | 0 |
+| round 0 (shared, 9 programs patched by hand) | 0.230 [0.052, 0.459] | 0.091 [0.020, 0.178] | 37 | 51 |
+| fresh batch a | 0.059 [0.000, 0.156] | 0.035 [0.000, 0.096] | 14 | 63 |
+| fresh batch b | 0.148 [0.067, 0.281] | 0.074 [0.027, 0.136] | 30 | 0 |
+| mean of the 3 generations (t, 2 dof) | 0.146 [0.000, 0.357] | 0.067 [0.000, 0.139] | | |
+| `lex`, round 3 | 0.274 [0.104, 0.489] | 0.141 [0.040, 0.301] | | |
+| `unsolved`, round 3 | 0.141 [0.030, 0.356] | 0.052 [0.010, 0.119] | | |
 
-- **Best program per task:** the three generations average 0.146 with a range of 0.17 and a sample SD of 0.085. Pooling the
-  per-task spread (27 values) gives 0.069 for the mean of 9 tasks, so 0.07 to 0.09 is the noise on this metric.
-- **Mean over all 27 programs:** 0.067, SD 0.029 (pooled estimate 0.030). This metric is steadier.
-- The clean pair is a against b (the same process, no patch): 0.059 against 0.148. Per task the best program differs by 2.7 of
+- **Best program per task:** sample SD across the three generations 0.085 (range 0.17). Pooling the per-task spread gives
+  0.069 for the mean of 9 tasks, so 0.07 to 0.09 is the noise on this metric.
+- **Mean over all 27 programs:** SD 0.029 (pooled estimate 0.030). This metric is steadier.
+- Every interval is wide. The two arms' final values lie inside each other's intervals and inside the interval of the
+  generation mean.
+- The clean pair is a against b (same process, no patch): 0.059 against 0.148. Per task the best program differs by 2.7 of
   15 passes on average and by up to 6.
 - The round-0 generation is the highest, and it is the only one that was patched. So part of its gap to a and b is the patch.
 - Execution noise adds to this: re-running identical programs on the same seeds changed 11 of 15 per-seed outcomes for one
@@ -72,12 +80,16 @@ Three independent generations of programs from the same empty library, same pool
 **Reading the arms against this.** The difference between two single runs has an SD of about 0.10 to 0.12 on the best-program
 metric and about 0.04 on the all-programs metric.
 
-| metric | final-round gap `lex` - `unsolved` | in noise SDs | round-2 gap `lex` - `unsolved` | in noise SDs |
-|---|---|---|---|---|
-| best program per task | +0.133 | 1.1 to 1.3 | -0.140 | -1.2 to -1.4 |
-| mean of all programs | +0.089 | 2.2 | -0.091 | -2.2 |
+| metric | round | gap `lex` - `unsolved` | 95% interval (same tasks, seeds resampled) |
+|---|---|---|---|
+| best program per task | 1 | +0.030 | [-0.222, 0.319] |
+| best program per task | 2 | -0.141 | [-0.430, 0.104] |
+| best program per task | 3 (final) | +0.133 | [-0.104, 0.385] |
+| mean of all programs | 1 | -0.002 | [-0.099, 0.119] |
+| mean of all programs | 2 | -0.091 | [-0.291, 0.054] |
+| mean of all programs | 3 (final) | +0.089 | [-0.032, 0.264] |
 
-The gap reaches about 2 SDs on the all-programs metric, but it does so in **both directions** (round 2 favours `unsolved` by the
+All six intervals contain 0. The final-round gap is about 2 noise SDs on the all-programs metric, but it appears in **both directions** (round 2 favours `unsolved` by the
 same amount). With one run per arm, three noise points and several metrics and rounds looked at, that cannot be read as an
 effect of the selection rule. It does show that library changes or generation variance move the metric by that much between
 rounds. A comparison needs several repetitions per arm, which is what the campaign now running provides.
