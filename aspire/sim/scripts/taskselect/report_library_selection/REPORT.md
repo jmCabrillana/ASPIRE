@@ -1,6 +1,6 @@
 # Library build with task selection: first comparison and noise floor
 
-Date: 2026-10-14 to 2026-10-15. One RTX 5090. Model: `claude-sonnet-5` for every writer and repair agent.
+Date: 2026-10-14 onwards (section 7 is updated as results arrive). One RTX 5090. Model: `claude-sonnet-5` for every writer and repair agent.
 Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/library_loop.py`.
 
 ## Summary
@@ -13,7 +13,10 @@ Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/l
 - Two clear library effects were seen, one in each arm, and both are real mechanisms, not selection effects:
   a perception rule that was used and helped, and a perception prompt that helped and then was not reused.
 - A pipeline defect (point-prompt API misuse, never fixed in the writers' instructions) crashed up to 30% of the `lex` trials in
-  rounds 1 to 3. It biases the comparison against `lex`.
+  rounds 1 to 3. It biases the comparison against `lex`. It is fixed in all later runs.
+- **Campaign in progress (section 7):** 3 repetitions of both arms with 30 probe seeds and 5 repairs. The noise allows a
+  gap of about 0.07 or more to be seen over 3 repetitions. First finished arm: `lex` rose from 0.028 to 0.147, outside the
+  noise, but the paired random arm is not finished, so there is no comparison yet.
 
 ## Setup
 
@@ -134,6 +137,74 @@ Why a better element appeared at all:
 - **Worker count** differed between the arms (2 against 4); a control showed it is not a source of bias.
 - **One run per arm.** Nothing here is a significance statement.
 
+## 7. Campaign: 30 seeds, 5 repairs (updated as results arrive)
+
+Last update: 2026-10-16, after `lex` repetition 1.
+
+**Design.** Same pool, same 3 programs per task, same rules, but every probe uses **30 seeds (51-80)** and each arm makes
+**5 repairs** (6 probes). The writers' prompts carry the API facts (point prompt takes one `(x, y)` pair, `import numpy as np`,
+no Molmo), so the point-prompt defect of section 5 is gone. Three repetitions; in each, round 0 is written once and shared by
+both arms. Arm order alternates by repetition. Run ids end in `_s30_r<k>`. Driver: `run_reps.py --reps 1 2 3 --seeds 51..80
+--rounds 5 --tag _s30`. Numbers come from `analysis_runs.py`.
+
+Status: rep 1 `lex` done (8 h); rep 1 `unsolved` running; reps 2 and 3 queued.
+
+**Noise floor, updated with two more generations** (five independent round-0 generations from the empty library, seeds 51-65):
+mean 0.065, SD 0.029. The difference of two single runs has SD 0.042. Smallest gap between arms that is reliably seen
+(5% level, 80% power): 0.117 with 1 repetition per arm, 0.083 with 2, 0.067 with 3, 0.048 with 6.
+
+**Mean pass rate over the 27 programs, by round (the number of programs and tasks is the same in every row).**
+
+| run | design | 0 | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|---|---|
+| `lex` r1 (pilot) | 15 seeds, 3 repairs | 0.091 | 0.064 | 0.057 | 0.141 | | |
+| `unsolved` r1 (pilot) | same | 0.091 | 0.067 | 0.148 | 0.052 | | |
+| `lex` r2 | same | 0.091 | 0.104 | 0.126 | 0.128 | | |
+| `unsolved` r2 | same | 0.091 | 0.111 | 0.128 | 0.099 | | |
+| `lex` s30 r1 | 30 seeds, 5 repairs, seeds 51-65 | 0.032 | 0.049 | 0.094 | 0.052 | 0.089 | 0.156 |
+| `lex` s30 r1 | seeds 66-80 only (no repair used them) | 0.025 | 0.074 | 0.069 | 0.044 | 0.077 | 0.138 |
+| `unsolved` s30 r1 | seeds 51-65 | 0.032 | 0.062 | | | | |
+| `unsolved` s30 r1 | seeds 66-80 only | 0.025 | 0.064 | | | | |
+
+### 7.1 `lex`, repetition 1 (30 seeds, 5 repairs)
+
+- **Result.** The mean rose from 0.028 to 0.147 over the five repairs (+0.119, 95% interval [+0.009, +0.247]; bootstrap over
+  tasks and seeds). On seeds 66-80 it rose from 0.025 to 0.138, so this is not repair-seed overfitting. The final value is
+  about 3 noise SDs above fresh round-0 generations.
+- **The path is noisy.** The round steps are +0.034, +0.019, -0.033, +0.035, +0.064; their SD (0.036) is about the noise SD.
+  Only the last step is clearly beyond it. The trend is +0.018 per round.
+- **Against the earlier final rounds** (0.141, 0.052, 0.128, 0.099) the final 0.156 is the highest, but only 1.2 noise SDs
+  above their mean, and it had two more repairs and a lower start (0.032 against 0.091). We cannot say 5 repairs beat 3.
+- **Crashed trials** are 0 to 19% (4% in the final round) against 13 to 43% in the pilot: the API-facts fix worked.
+- **No task is solved on all 30 seeds** in any round. Final-round passes of 90: salad dressing 51, turn on the stove 30, bowl on
+  the stove 19.
+
+| round | task repaired | diagnosis | library addition |
+|---|---|---|---|
+| 0 | open the middle drawer | handle count unstable, but handle choice did not decide pass or fail | no motion churn without checking known-good seeds; ordinal targets; never retry from a stale pose |
+| 1 | bowl on the stove | an absolute GraspNet score threshold rejects every grasp; 4 pick attempts help (5 to 11 of 15) | more retries beat tuning; no absolute score filter |
+| 2 | bowl on the stove | two placement-target clusters from one stove mask | height-bimodality guard; density-mode centroid |
+| 3 | bowl between plate and ramekin | "ramekin" scores 0.001, so the betweenness test never ran and the wrong bowl was grasped | read the **settled** gripper width, not the return value of `close_gripper()`; no score filter on landmark objects |
+| 4 | salad dressing | clean trace, "inside footprint", reward 0: release dynamics | one run's pass count cannot validate a change |
+
+Only the stove repair of round 1 passed its 15 development seeds with the kept program.
+
+- **One element clearly changed the programs.** The settled-width rule (added after round 3) was used by 0 of 27 programs
+  before it and by **23 of 27 in round 4 and 24 of 27 in round 5**. Programs that use it score higher (0.126 against 0.043), but
+  the 7 programs without it are spread over three tasks, so this shows adoption, not benefit. Best case: salad dressing, 3
+  passes (round 3) to 42 and 51 (rounds 4 and 5); that task had just been repaired, on the same development seeds.
+- **Knowledge crossed tasks.** "Turn on the stove" was never repaired and went 5, 11, 14, 17, 10, 30 of 90, while the
+  stove-bowl and drawer repairs added generic retry and placement rules that appear in its programs.
+- **Style against the earlier runs.** The `unsolved` pilots added mostly perception prompts and learned-planner rules; this
+  run added grasp-verification, retry and placement-target rules. The `lex` pilots also stayed with grasp and placement
+  rules, so the style follows the first repaired task more than the selection rule. `lex` picked the bowl on the stove twice
+  (disagreement stayed high after the first, failed, repair).
+- **Library size** went from 4.7 KB (L01) to 17.6 KB (L05), additions only.
+
+**What the campaign can claim so far.** Five repairs on 30 seeds raised this run's pass rate outside the noise, on seeds no
+repair used. Not shown: that `lex` beats random selection (the paired arm is unfinished), that 5 repairs beat 3, or that any
+single rule caused the gain.
+
 ## Where things are, by experiment id
 
 All paths are under `aspire/sim/outputs/` (gitignored). The live directory `.claude/libero/skills/` is only a working
@@ -144,6 +215,8 @@ copy: each run saves its own libraries, so it is restored to the committed versi
 | `library_lex_r1` | arm `lex`, 3 repairs + final probe | `library/L00` (empty) to `L03` | `round_NN/probe.json`, `round_NN/selection.json` | `round_NN/fixloop/<suite>/<task>/findings.md`, `skill_promotions.jsonl` |
 | `library_unsolved_r1` | arm `unsolved` (also holds the shared round 0) | `library/L00` to `L03` | same | same |
 | `library_noise_a`, `library_noise_b` | fresh round-0 generations from the empty library | `library/L00` | `round_00/probe.json` | none |
+| `library_lex_r2`, `library_unsolved_r2` | pilot repetition 2 (15 seeds, 3 repairs; shared round 0) | `library/L00` to `L03` | same | same |
+| `library_lex_s30_r<k>`, `library_unsolved_s30_r<k>` | campaign (30 seeds 51-80, 5 repairs, 6 probes; shared round 0 per repetition) | `library/L00` to `L05` | same | same |
 | `skill_snapshots/family_start` | skills after the first single-task fix loop; equals the committed `.claude/libero/skills` | 5 files | none | none |
 
 Each run also has `state.json` (pool, rounds, settings) and `coordinator.md` (the exact prompt it was started with).
@@ -157,6 +230,7 @@ also lower it; run-to-run noise is as large as the differences seen.
 Not supported: that disagreement selection beats random selection, in either direction.
 
 Next, in order:
-1. Add the point-prompt line and `import numpy as np` to the writers' instructions in every round, in both arms.
-2. Repeat each arm at least three times, or raise the programs per task from 3 to 6 so the metric is less noisy.
+1. ~~Add the point-prompt line and `import numpy as np` to the writers' instructions~~ (done for the campaign).
+2. ~~Repeat each arm; more seeds and rounds~~ (section 7, running).
 3. Record the concrete perception prompt that worked in the library, not only the rule.
+4. After the campaign: evaluate the start library and each arm's final library on held-out tasks (21 swap tasks lie outside the pool).
