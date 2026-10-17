@@ -14,9 +14,9 @@ Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/l
   a perception rule that was used and helped, and a perception prompt that helped and then was not reused.
 - A pipeline defect (point-prompt API misuse, never fixed in the writers' instructions) crashed up to 30% of the `lex` trials in
   rounds 1 to 3. It biases the comparison against `lex`. It is fixed in all later runs.
-- **Campaign in progress (section 7):** 3 repetitions of both arms with 30 probe seeds and 5 repairs. The noise allows a
-  gap of about 0.07 or more to be seen over 3 repetitions. First finished arm: `lex` rose from 0.028 to 0.147, outside the
-  noise, but the paired random arm is not finished, so there is no comparison yet.
+- **Campaign in progress (section 7):** repetitions of both arms with 30 probe seeds and 5 repairs; 2 of 5 are finished.
+  `lex` ends higher than `unsolved` in both (+0.032, +0.059; mean +0.045), but two repetitions can only show a gap of
+  about 0.075, so this is a lean, not a result. All four runs end above their round 0.
 
 ## Setup
 
@@ -139,32 +139,52 @@ Why a better element appeared at all:
 
 ## 7. Campaign: 30 seeds, 5 repairs (updated as results arrive)
 
-Last update: 2026-10-16, after `lex` repetition 1.
+Last update: 2026-10-17, after repetition 2 (both arms).
 
 **Design.** Same pool, same 3 programs per task, same rules, but every probe uses **30 seeds (51-80)** and each arm makes
 **5 repairs** (6 probes). The writers' prompts carry the API facts (point prompt takes one `(x, y)` pair, `import numpy as np`,
-no Molmo), so the point-prompt defect of section 5 is gone. Three repetitions; in each, round 0 is written once and shared by
-both arms. Arm order alternates by repetition. Run ids end in `_s30_r<k>`. Driver: `run_reps.py --reps 1 2 3 --seeds 51..80
+no Molmo), so the point-prompt defect of section 5 is gone. Five repetitions planned; in each, round 0 is written once and shared by
+both arms. Arm order alternates by repetition. Run ids end in `_s30_r<k>`. Driver: `run_reps.py --reps k --seeds 51..80
 --rounds 5 --tag _s30`. Numbers come from `analysis_runs.py`.
 
-Status: rep 1 `lex` done (8 h); rep 1 `unsolved` running; reps 2 and 3 queued.
+Status: reps 1 and 2 done (about 8 to 10 h per arm); rep 3 running; reps 4 and 5 queued.
 
-**Noise floor, updated with two more generations** (five independent round-0 generations from the empty library, seeds 51-65):
-mean 0.065, SD 0.029. The difference of two single runs has SD 0.042. Smallest gap between arms that is reliably seen
-(5% level, 80% power): 0.117 with 1 repetition per arm, 0.083 with 2, 0.067 with 3, 0.048 with 6.
+**Noise floor, updated** (six independent round-0 generations from the empty library, seeds 51-65): mean 0.067, SD 0.027. The
+difference of two single runs has SD 0.038. Smallest gap between arms that is reliably seen (5% level, 80% power): 0.106
+with 1 repetition per arm, 0.075 with 2, 0.061 with 3, 0.053 with 4, 0.043 with 6. Seed sampling is a small part of this: with
+30 seeds it moves a run's mean by only 0.005 to 0.008, so more seeds do not help; more repetitions do.
 
-**Mean pass rate over the 27 programs, by round (the number of programs and tasks is the same in every row).**
+**Mean pass rate over the 27 programs, by round (all seeds of the run).**
 
 | run | design | 0 | 1 | 2 | 3 | 4 | 5 |
 |---|---|---|---|---|---|---|---|
 | `lex` r1 (pilot) | 15 seeds, 3 repairs | 0.091 | 0.064 | 0.057 | 0.141 | | |
 | `unsolved` r1 (pilot) | same | 0.091 | 0.067 | 0.148 | 0.052 | | |
-| `lex` r2 | same | 0.091 | 0.104 | 0.126 | 0.128 | | |
-| `unsolved` r2 | same | 0.091 | 0.111 | 0.128 | 0.099 | | |
-| `lex` s30 r1 | 30 seeds, 5 repairs, seeds 51-65 | 0.032 | 0.049 | 0.094 | 0.052 | 0.089 | 0.156 |
-| `lex` s30 r1 | seeds 66-80 only (no repair used them) | 0.025 | 0.074 | 0.069 | 0.044 | 0.077 | 0.138 |
-| `unsolved` s30 r1 | seeds 51-65 | 0.032 | 0.062 | | | | |
-| `unsolved` s30 r1 | seeds 66-80 only | 0.025 | 0.064 | | | | |
+| `lex` r2 (pilot) | same | 0.091 | 0.104 | 0.126 | 0.128 | | |
+| `unsolved` r2 (pilot) | same | 0.091 | 0.111 | 0.128 | 0.099 | | |
+| `lex` s30 r1 | 30 seeds, 5 repairs | 0.028 | 0.062 | 0.081 | 0.048 | 0.083 | 0.147 |
+| `unsolved` s30 r1 | same | 0.028 | 0.063 | 0.133 | 0.049 | 0.094 | 0.115 |
+| `lex` s30 r2 | same | 0.078 | 0.152 | 0.091 | 0.104 | 0.072 | 0.159 |
+| `unsolved` s30 r2 | same | 0.078 | 0.007 | 0.070 | 0.177 | 0.117 | 0.100 |
+
+Final round on seeds 66-80 only (no repair used them): `lex` 0.138 and 0.165, `unsolved` 0.121 and 0.094 (reps 1 and 2).
+
+### 7.2 `lex` against `unsolved` after two repetitions
+
+| rep | `lex` final | `unsolved` final | gap | `lex` gain over round 0 | `unsolved` gain over round 0 | gap in the mean of rounds 1-5 |
+|---|---|---|---|---|---|---|
+| 1 | 0.147 | 0.115 | +0.032 | +0.119 | +0.086 | -0.007 |
+| 2 | 0.159 | 0.100 | +0.059 | +0.081 | +0.022 | +0.021 |
+| mean | 0.153 | 0.108 | +0.045 | +0.100 | +0.054 | +0.007 |
+
+- `lex` ends higher in both repetitions, also on seeds 66-80, and gains more over its round 0. Averaged over rounds 1 to 5 the
+  two arms are level, so the final-round gap may be luck at the last step.
+- The mean gap of +0.045 is 1.7 standard errors (SE of the mean of two pair differences: 0.038 / sqrt(2) = 0.027). Two
+  repetitions detect a gap of 0.075, so this is not a result. Reps 3 to 5 decide.
+- Single rounds are very noisy: `unsolved` in rep 2 fell from 0.078 to 0.007 in round 1 (35% crashed trials) and recovered to
+  0.177 by round 3.
+- All four 30-seed runs end above their round 0 (+0.022 to +0.119); only `lex` rep 1 has a 95% interval above 0, so the
+  gain of the repair loop is likely but is not shown by one run.
 
 ### 7.1 `lex`, repetition 1 (30 seeds, 5 repairs)
 
@@ -216,7 +236,7 @@ copy: each run saves its own libraries, so it is restored to the committed versi
 | `library_unsolved_r1` | arm `unsolved` (also holds the shared round 0) | `library/L00` to `L03` | same | same |
 | `library_noise_a`, `library_noise_b` | fresh round-0 generations from the empty library | `library/L00` | `round_00/probe.json` | none |
 | `library_lex_r2`, `library_unsolved_r2` | pilot repetition 2 (15 seeds, 3 repairs; shared round 0) | `library/L00` to `L03` | same | same |
-| `library_lex_s30_r<k>`, `library_unsolved_s30_r<k>` | campaign (30 seeds 51-80, 5 repairs, 6 probes; shared round 0 per repetition) | `library/L00` to `L05` | same | same |
+| `library_lex_s30_r<k>`, `library_unsolved_s30_r<k>` | campaign (k = 1 to 5) (30 seeds 51-80, 5 repairs, 6 probes; shared round 0 per repetition) | `library/L00` to `L05` | same | same |
 | `skill_snapshots/family_start` | skills after the first single-task fix loop; equals the committed `.claude/libero/skills` | 5 files | none | none |
 
 Each run also has `state.json` (pool, rounds, settings) and `coordinator.md` (the exact prompt it was started with).
