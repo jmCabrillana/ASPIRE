@@ -169,7 +169,7 @@ with 1 repetition per arm, 0.075 with 2, 0.061 with 3, 0.053 with 4, 0.043 with 
 
 Final round on seeds 66-80 only (no repair used them): `lex` 0.138 and 0.165, `unsolved` 0.121 and 0.094 (reps 1 and 2).
 
-### 7.2 `lex` against `unsolved` after two repetitions
+### 7.1 `lex` against `unsolved` after two repetitions
 
 | rep | `lex` final | `unsolved` final | gap | `lex` gain over round 0 | `unsolved` gain over round 0 | gap in the mean of rounds 1-5 |
 |---|---|---|---|---|---|---|
@@ -186,7 +186,7 @@ Final round on seeds 66-80 only (no repair used them): `lex` 0.138 and 0.165, `u
 - All four 30-seed runs end above their round 0 (+0.022 to +0.119); only `lex` rep 1 has a 95% interval above 0, so the
   gain of the repair loop is likely but is not shown by one run.
 
-### 7.1 `lex`, repetition 1 (30 seeds, 5 repairs)
+### 7.2 `lex`, repetition 1 (30 seeds, 5 repairs)
 
 - **Result.** The mean rose from 0.028 to 0.147 over the five repairs (+0.119, 95% interval [+0.009, +0.247]; bootstrap over
   tasks and seeds). On seeds 66-80 it rose from 0.025 to 0.138, so this is not repair-seed overfitting. The final value is
