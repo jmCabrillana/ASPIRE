@@ -15,8 +15,104 @@ Figures: `figs/` (make them with `make_figures.py`). Code: `scripts/taskselect/l
 - A pipeline defect (point-prompt API misuse, never fixed in the writers' instructions) crashed up to 30% of the `lex` trials in
   rounds 1 to 3. It biases the comparison against `lex`. It is fixed in all later runs.
 - **Campaign in progress (section 7):** repetitions of both arms with 30 probe seeds and 5 repairs; 2 of 5 are finished.
-  `lex` ends higher than `unsolved` in both (+0.032, +0.059; mean +0.045), but two repetitions can only show a gap of
-  about 0.075, so this is a lean, not a result. All four runs end above their round 0.
+  With the first 3 programs per task `lex` ended higher in both (+0.032, +0.059). Re-measuring each final library with 3 more
+  programs per task (6 in total) **removed the gap** (-0.009, +0.002): the lead was writer luck. So far there is no evidence
+  that disagreement selection beats random selection. All four runs end above their round 0.
+
+## Proposition and hypotheses
+
+**Setting.** A language model writes a Python program for a robot task from a skill library (markdown files of rules and
+helpers). When programs fail, an agent repairs one task, and the lesson is written back into the library. The library is the
+only thing that carries knowledge from one round to the next. Repairing is expensive (about an hour of agent and simulator
+time per task), so a build repairs only a few tasks. **Which task to repair next decides what the library learns.**
+
+**Proposition.** The most informative task to repair is the one where the current programs **disagree**: some pass and some
+fail on the same seeds, many unsolved tasks fail at the same stage, and the failures have varied traces. Disagreement says that
+the task is neither hopeless nor already solved, and that a fix at a shared failure stage will carry over to other tasks.
+Repairing by this rule (`lex`) should build a better library than repairing a random unsolved task (`unsolved`) at the same
+number of repairs.
+
+**Hypotheses** (all about the library after the same number of repairs, same tasks, same writers):
+
+| id | statement | measure | how it can fail |
+|---|---|---|---|
+| H1 (primary) | the final library of `lex` gives a higher pass rate than that of `unsolved` | mean pass rate over 27 programs (9 tasks x 3), and over 6 programs per task, on 30 seeds | gap within the noise, or negative |
+| H2 | `lex` improves a library faster along the rounds | gain over round 0, mean over rounds 1 to 5 | no gain difference |
+| H3 | `lex` lessons transfer: tasks that were not repaired improve | per-task passes, unrepaired tasks | gains only on repaired tasks |
+| H0 (noise) | one run's mean moves by 0.03 (SD) with no change in the library, so an effect smaller than the detectable gap cannot be shown | six round-0 generations from the empty library | (this is a measured fact, not a claim) |
+
+**What can be concluded.** The smallest gap that two arms can reliably show (5% level, 80% power) is 0.106 with 1
+repetition, 0.075 with 2, 0.061 with 3, 0.053 with 4, 0.043 with 6. A result below that is reported as "not shown", not as
+"no effect". The harness idea (section 8) is a second, separate proposition and is not tested yet.
+
+## Method: the library, the loop and the update rule
+
+**The library.** Markdown files in `.claude/libero/skills/` (`grasp`, `localize`, `manipulation`, `transport`, `README`).
+Writers read them as context; programs never import them. A build starts from the empty library `L00`, and each repair
+produces the next one (`L01`, `L02`, ...). Every version is stored in `outputs/<run>/library/Lnn`.
+
+**One round (pseudo-code).**
+
+```
+L <- empty library                                   # L00
+for t in 0 .. R-1:                                   # R = 5 repairs in the campaign
+    for task in pool:                                # 9 swap tasks
+        programs[task] <- K writers (K=3), each a fresh zero-shot program from L, differing in strategy
+    for program in programs: outcome[program][seed] <- run in simulator, seeds 51..80    # 27 x 30 trials
+    unsolved <- tasks with no program that passes all seeds
+    task <- select(rule, unsolved, outcome, traces)          # lex or unsolved (below)
+    best, findings <- repair(task, start = best program of task, dev seeds 51..65, <= 5 iterations)
+    L <- promote(L, findings)                        # the library update, below
+    save L as L(t+1)
+final probe: write K programs per task from the last library, run them on seeds 51..80
+```
+
+**Task selection.**
+
+```
+select(unsolved, outcome, traces):
+    if rule == "unsolved": return uniform_random(unsolved)                      # baseline (salted seed)
+    for task in unsolved:
+        split(task)  = mean over seeds s of entropy of (number of programs that pass seed s)
+        shares(task) = number of unsolved tasks whose most common failing stage equals task's
+        trace(task)  = entropy of the (failure stage, printed failure tag) signatures of all trials of task
+    return argmax over unsolved of the tuple (split, shares, trace)             # lexicographic, ties broken by salted random
+```
+
+Failure stage of a trial is read from its API trace only: `crash`, `perceive` (object not found), `no_motion`, `no_close`, `air`
+(closed on nothing), `slip` (held, then lost), `held_end`, `released` (placed wrong), `pass`. `LEX.md` has a worked example.
+
+**Repair (the fix loop).**
+
+```
+repair(task, start, dev seeds):
+    read pass and fail traces of the 3 probe programs; compare programs that pass a seed another fails
+    for i in 1 .. 5:
+        write one task-level program (no seed-specific branch, no hard-coded coordinates) from the best evidence
+        run it on the 15 dev seeds; diagnose its failed seeds from traces
+    kept <- iteration with most passes (ties: the later one)
+    write findings.md: root causes, pass count of every iteration, "Generalizable Patterns"
+```
+
+**Library update rule (promotion).** After the repair, the coordinator reads `findings.md`, edits the skill files and logs it in a
+ledger (`skill_promotions.jsonl`: files changed, reason). Rules in force:
+1. A lesson is added as a short rule with its trigger and evidence, in the file of its category (grasp, localise, place,
+   carry). Generic patterns are preferred over task facts.
+2. No rule is ever removed or corrected: the library only grows (4.7 KB after the first repair, 17.6 KB after five in one run).
+3. The kept program's pass count on the dev seeds is the only evidence required. There is no test on other seeds, which is the
+   weakness section 8 addresses.
+4. Skills may use the allowed APIs only (no simulator state, no `.bddl`/`.xml` reads).
+
+**Protocol and controls.**
+
+| item | value |
+|---|---|
+| pool | 9 swap tasks: goal (3), spatial (3), object (3); 21 more swap tasks are held out and unused so far |
+| probe seeds | 51-80 (30), every round; repair development seeds are 51-65 |
+| repetition | round 0 is written once and shared by both arms; arm order alternates; 5 repetitions planned |
+| same in both arms | model (`claude-sonnet-5`), K, writers' prompts, repair budget, seeds, API facts note |
+| differs | only the selection rule |
+| noise control | six independent round-0 generations from the empty library, and a re-measurement of each final library with 3 more programs per task |
 
 ## Setup
 
@@ -225,6 +321,53 @@ Only the stove repair of round 1 passed its 15 development seeds with the kept p
 repair used. Not shown: that `lex` beats random selection (the paired arm is unfinished), that 5 repairs beat 3, or that any
 single rule caused the gain.
 
+### 7.3 Final libraries measured with 6 programs per task
+
+`remeasure.py` writes 3 new programs per task from each final library (read from the run's own library directory) and probes
+them on the same 30 seeds. With the original 3, every task has 6 programs.
+
+| rep | `lex` (6 programs) | `unsolved` (6 programs) | gap | 95% interval of the gap |
+|---|---|---|---|---|
+| 1 | 0.110 (original 3: 0.147, new 3: 0.074) | 0.120 (0.115, 0.125) | -0.009 | [-0.151, +0.122] |
+| 2 | 0.104 (0.159, 0.048) | 0.101 (0.100, 0.102) | +0.002 | [-0.102, +0.090] |
+| mean | | | -0.003 | |
+
+- The new programs from the `lex` libraries score far below the original ones (0.074 and 0.048 against 0.147 and 0.159), while
+  the `unsolved` ones match (0.125 and 0.102 against 0.115 and 0.100). The earlier `lex` lead came from the draw of the
+  original programs.
+- One process difference: the original programs came from subagents inside the arm's coordinator session, the new ones from a
+  fresh session that read only the library. Both arms are treated alike and `unsolved` shows no shift.
+- So with this measure the two arms are level. This is the conclusion to carry forward unless rep 3 and later change it.
+
+## 8. A second proposition: validate a repair before its lesson enters the library (not tested yet)
+
+**Problem.** Evaluation is noisy (the SD between independent generations is 0.027; identical programs scored 7/15 and 13/15 on
+the same seeds), yet a lesson enters the library on the strength of the kept program's dev-seed pass count (rule 3 above). Luck
+and wrong diagnoses (an early fix loop went 0/15 on dev and 0/50 held out) therefore become permanent library text, and the
+library only grows.
+
+**Hypotheses.**
+- H4: a library that only accepts repairs that beat their starting program on fresh seeds scores higher on unseen seeds and on
+  unseen tasks than an ungated one at the same repair budget. It can fail: with a margin of 3 passes of 15 the gate accepts about
+  16% of useless repairs and only about 55% of a true +20-point repair.
+- H5: giving the repair agent a trace diagnosis tool (per-query detection scores, grasped-object position, grasp contrast between
+  passing and failing trials) raises the share of repairs that pass the gate.
+
+**Pieces built** (committed, untested on the simulator): `harness/why.py` (the diagnosis tool, CPU only), `harness/accept.py`
+(the gate), `prompts/repair_harness_addendum.md`, and `run_reps.py --treatment harness`.
+
+```
+promote_with_gate(L, task, start, kept, findings):
+    A <- pass count of start on acceptance seeds 81..95          # seeds used by no repair and no probe
+    B <- pass count of kept on the same seeds
+    if B - A >= 3: L <- add lessons from findings to L
+    else:          L unchanged; log "rejected (A, B)"
+```
+
+Planned design: arms `unsolved`, `unsolved + tool`, `unsolved + gate`, `unsolved + both`, at least 4 repetitions, budget counted
+including the gate's trials, measured on unseen seeds, 6 programs per task, and on the 21 held-out tasks. Section 6 lists the
+held-out transfer test as the first thing to run after the campaign.
+
 ## Where things are, by experiment id
 
 All paths are under `aspire/sim/outputs/` (gitignored). The live directory `.claude/libero/skills/` is only a working
@@ -236,7 +379,7 @@ copy: each run saves its own libraries, so it is restored to the committed versi
 | `library_unsolved_r1` | arm `unsolved` (also holds the shared round 0) | `library/L00` to `L03` | same | same |
 | `library_noise_a`, `library_noise_b` | fresh round-0 generations from the empty library | `library/L00` | `round_00/probe.json` | none |
 | `library_lex_r2`, `library_unsolved_r2` | pilot repetition 2 (15 seeds, 3 repairs; shared round 0) | `library/L00` to `L03` | same | same |
-| `library_lex_s30_r<k>`, `library_unsolved_s30_r<k>` | campaign (k = 1 to 5) (30 seeds 51-80, 5 repairs, 6 probes; shared round 0 per repetition) | `library/L00` to `L05` | same | same |
+| `library_lex_s30_r<k>`, `library_unsolved_s30_r<k>` | campaign (k = 1 to 5); `outputs/remeasure/<run>` holds the 3 extra programs per task and their probe (30 seeds 51-80, 5 repairs, 6 probes; shared round 0 per repetition) | `library/L00` to `L05` | same | same |
 | `skill_snapshots/family_start` | skills after the first single-task fix loop; equals the committed `.claude/libero/skills` | 5 files | none | none |
 
 Each run also has `state.json` (pool, rounds, settings) and `coordinator.md` (the exact prompt it was started with).

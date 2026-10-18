@@ -124,12 +124,47 @@ def unseen_seeds() -> None:
         print(f"  {run:26s} " + " ".join(f"{p[0][:, :, 15:].mean():.3f}" for p in rows if p is not None))
 
 
+def six_programs(run: str):
+    """(tasks, 6 programs, seeds): the final probe's 3 programs plus the 3 re-measurement programs (remeasure.py), or None."""
+    f = OUT / "remeasure" / run / "probe.json"
+    if not f.exists():
+        return None
+    n = max(int(p.parent.name.split("_")[1]) for p in (OUT / run).glob("round_*/probe.json"))
+    old = probe(run, n)
+    d = json.load(open(f))
+    new = np.array([[d["tasks"][t]["outcomes"][p] for p in sorted(d["tasks"][t]["outcomes"])] for t in old[2]], dtype=float)
+    return np.concatenate([old[0], new], axis=1)
+
+
+def final_six() -> None:
+    print("\n## final library measured with 6 programs per task (3 original + 3 re-measurement), 30 seeds")
+    gaps = []
+    for k in range(1, 6):
+        a, b = six_programs(f"library_lex_s30_r{k}"), six_programs(f"library_unsolved_s30_r{k}")
+        if a is None or b is None:
+            continue
+        ma, mb = a.mean(), b.mean()
+        three_a, three_b = a[:, :3].mean(), b[:, :3].mean()
+        extra_a, extra_b = a[:, 3:].mean(), b[:, 3:].mean()
+        boots = []
+        for _ in range(2000):
+            ts = RNG.integers(0, 9, 9)
+            boots.append(a[ts][:, RNG.integers(0, 6, 6)].mean() - b[ts][:, RNG.integers(0, 6, 6)].mean())
+        lo, hi = np.percentile(boots, [2.5, 97.5])
+        gaps.append(ma - mb)
+        print(f"  rep {k}: lex {ma:.3f} (orig 3: {three_a:.3f}, new 3: {extra_a:.3f}) | unsolved {mb:.3f} (orig {three_b:.3f}, new {extra_b:.3f}) "
+              f"| gap {ma - mb:+.3f}  95% [{lo:+.3f}, {hi:+.3f}]")
+    if len(gaps) > 1:
+        print(f"  mean gap {np.mean(gaps):+.3f}, SD of the gaps {np.std(gaps, ddof=1):.3f}, n={len(gaps)}")
+
+
 def main() -> None:
     table_runs()
     sd, sd_u = noise()
     detectability(sd)
     gains()
     unseen_seeds()
+    final_six()
     per_task("library_lex_s30_r1")
 
 
