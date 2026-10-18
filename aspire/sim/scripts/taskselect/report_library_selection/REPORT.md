@@ -57,11 +57,11 @@ produces the next one (`L01`, `L02`, ...). Every version is stored in `outputs/<
 L <- empty library                                   # L00
 for t in 0 .. R-1:                                   # R = 5 repairs in the campaign
     for task in pool:                                # 9 swap tasks
-        programs[task] <- K writers (K=3), each a fresh zero-shot program from L, differing in strategy
+        programs[task] <- 3 fresh zero-shot programs written from L, differing in strategy
     for program in programs: outcome[program][seed] <- run in simulator, seeds 51..80    # 27 x 30 trials
     unsolved <- tasks with no program that passes all seeds
     task <- select(rule, unsolved, outcome, traces)          # lex or unsolved (below)
-    best, findings <- repair(task, start = best program of task, dev seeds 51..65, <= 5 iterations)
+    best, findings <- repair(task, start, dev seeds 51..65, <= 5 iterations)
     L <- promote(L, findings)                        # the library update, below
     save L as L(t+1)
 final probe: write K programs per task from the last library, run them on seeds 51..80
@@ -71,12 +71,12 @@ final probe: write K programs per task from the last library, run them on seeds 
 
 ```
 select(unsolved, outcome, traces):
-    if rule == "unsolved": return uniform_random(unsolved)                      # baseline (salted seed)
+    if rule == "unsolved": return uniform_random(unsolved)       # baseline (salted seed)
     for task in unsolved:
         split(task)  = mean over seeds s of entropy of (number of programs that pass seed s)
         shares(task) = number of unsolved tasks whose most common failing stage equals task's
         trace(task)  = entropy of the (failure stage, printed failure tag) signatures of all trials of task
-    return argmax over unsolved of the tuple (split, shares, trace)             # lexicographic, ties broken by salted random
+    return argmax over unsolved of (split, shares, trace)    # lexicographic; ties: salted random
 ```
 
 Failure stage of a trial is read from its API trace only: `crash`, `perceive` (object not found), `no_motion`, `no_close`, `air`
@@ -88,7 +88,7 @@ Failure stage of a trial is read from its API trace only: `crash`, `perceive` (o
 repair(task, start, dev seeds):
     read pass and fail traces of the 3 probe programs; compare programs that pass a seed another fails
     for i in 1 .. 5:
-        write one task-level program (no seed-specific branch, no hard-coded coordinates) from the best evidence
+        write one task-level program (no seed branches, no hard-coded coordinates)
         run it on the 15 dev seeds; diagnose its failed seeds from traces
     kept <- iteration with most passes (ties: the later one)
     write findings.md: root causes, pass count of every iteration, "Generalizable Patterns"
