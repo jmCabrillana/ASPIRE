@@ -122,112 +122,34 @@ def style(ax, ylabel=None, xlabel=None):
         ax.set_xlabel(xlabel)
 
 
-# ---- figure 1: the two arms, round by round -----------------------------------------------------------------------
-def fig_arms(numbers: dict, noise: dict) -> None:
-    probes = {a: [load_probe(d, r) for r in range(4)] for a, (d, _, _) in ARMS.items()}
-    x = np.arange(4)
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.4))
-    for ax, kind, title, ylabel in [(axes[0], "all", "All 27 programs (9 tasks x 3), 15 trials each",
-                                     "pass rate over 405 trials")]:
-        for j, (a_, (_, color, label)) in enumerate(ARMS.items()):
-            arrs = [outcome_array(p) for p in probes[a_]]
-            y = [metric(v, kind) for v in arrs]
-            ci = [boot_ci(v, kind) for v in arrs]
-            xs = x + (j - 0.5) * 0.12
-            ax.errorbar(xs, y, yerr=[[v - lo for v, (lo, _) in zip(y, ci)], [hi - v for v, (_, hi) in zip(y, ci)]], color=color,
-                        linewidth=1.8, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=1.5,
-                        elinewidth=1.1, capsize=3, label=label)
-            numbers[f"{kind}_{a_}"] = [{"value": round(v, 3), "ci95": [round(lo, 3), round(hi, 3)]} for v, (lo, hi) in zip(y, ci)]
-        ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
-        ax.set_xlim(-0.35, 3.35)
-        ax.set_ylim(0, 0.36)
-        style(ax, ylabel, "round (library after n repairs)")
-        ax.set_title(title, loc="left", fontsize=11, fontweight="bold")
-        ax.legend(frameon=False, fontsize=8.5, loc="upper left")
-
-    ax = axes[1]
-    for a_, (_, color, label) in ARMS.items():
-        y = [100 * stage_share(p, "crash") for p in probes[a_]]
-        ax.plot(x, y, color=color, linewidth=2, marker="o", markersize=7, markeredgecolor=SURFACE, markeredgewidth=2, label=label)
-        numbers[f"crash_pct_{a_}"] = [round(v, 1) for v in y]
-    ax.set_xticks(x, ["0\n(shared)", "1", "2", "3\n(final)"])
-    ax.set_xlim(-0.35, 3.35)
-    ax.set_ylim(0, 50)
-    style(ax, "% of trials that crash", "round")
-    ax.set_title("Crashed trials", loc="left", fontsize=11, fontweight="bold")
-    ax.legend(frameon=False, fontsize=8.5, loc="upper right")
-    ax.annotate("point-prompt API bug:\n120 / 90 / 60 trials in lex,\n30 / 15 / 0 in unsolved", xy=(1, 43), xytext=(1.3, 33),
-                fontsize=8, color=MUTED, arrowprops={"arrowstyle": "-", "color": GRID})
-
-    diffs = {}
-    for kind in ("all",):
-        for r in range(1, 4):
-            lo, hi = boot_diff_ci(outcome_array(probes["lex"][r]), outcome_array(probes["unsolved"][r]), kind)
-            d = metric(outcome_array(probes["lex"][r]), kind) - metric(outcome_array(probes["unsolved"][r]), kind)
-            diffs[f"{kind}_round{r}"] = {"lex_minus_unsolved": round(d, 3), "ci95": [round(lo, 3), round(hi, 3)]}
-    numbers["arm_difference"] = diffs
-    fig.suptitle("Library build with task selection: lex vs random-among-unsolved, one run each (points with 95% intervals)",
-                 x=0.01, ha="left", fontsize=12, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(FIGS / "fig1_arms_by_round.png", dpi=160)
-    plt.close(fig)
-
-
-# ---- figure 2: per task, per round -----------------------------------------------------------------------------
-def fig_heatmap(numbers: dict) -> None:
-    probes = {a: [load_probe(d, r) for r in range(4)] for a, (d, _, _) in ARMS.items()}
-    tasks = list(probes["lex"][0])
-    repaired = {a: {x["task"]: x["round"] for x in json.loads((OUT / d / "state.json").read_text())["rounds"]}
-                for a, (d, _, _) in ARMS.items()}
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.6), sharey=True)
-    cmap = matplotlib.colormaps["Blues"]
-    for ax, (a, (_, color, label)) in zip(axes, ARMS.items()):
-        grid = np.array([[sum(sum(r) for r in probes[a][k][t]["outcomes"].values()) for k in range(4)] for t in tasks])
-        ax.imshow(grid, cmap=cmap, vmin=0, vmax=45, aspect="auto")
-        for i, t in enumerate(tasks):
-            for k in range(4):
-                v = grid[i, k]
-                ax.text(k, i, str(v), ha="center", va="center", fontsize=10, color="white" if v > 24 else INK)
-                if repaired[a].get(t) == k:
-                    ax.add_patch(plt.Rectangle((k - 0.5, i - 0.5), 1, 1, fill=False, edgecolor=color, linewidth=2.5))
-        ax.set_xticks(range(4), ["0", "1", "2", "3"])
-        ax.set_yticks(range(len(tasks)), [short(t) for t in tasks])
-        ax.set_xlabel("round")
-        ax.set_title(label, loc="left", fontsize=11, fontweight="bold", color=color)
-        for s in ax.spines.values():
-            s.set_visible(False)
-        ax.tick_params(length=0)
-    fig.suptitle("Passes of 45 trials (3 programs x 15 seeds), per task and round (outlined = repaired after this probe)",
-                 x=0.01, ha="left", fontsize=11, fontweight="bold")
-    fig.tight_layout()
-    fig.savefig(FIGS / "fig2_task_by_round.png", dpi=160)
-    plt.close(fig)
-
-
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
-    """Mean and SD over the 27 programs' pass rates: three generations from the same empty library, and the two arms."""
-    rows = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0), INK), ("fresh batch a", noise["a"], GREY),
-            ("fresh batch b", noise["b"], GREY)]
-    rows += [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
-    fig, ax = plt.subplots(figsize=(8.4, 3.2))
-    out = {}
-    for y, (name, run, color) in enumerate(rows):
-        r = outcome_array(run).mean(axis=2).ravel()          # 27 programs, pass rate of each over 15 seeds
+    """Mean and SD over the 27 programs' pass rates: independent round-0 generations from the empty library, and the final round of each arm."""
+    rows = [("fresh batch a", noise["a"], GREY), ("fresh batch b", noise["b"], GREY),
+            ("round 0, pilot", load_probe("library_unsolved_r2", 0), GREY),
+            ("round 0, campaign rep 1", load_probe("library_unsolved_s30_r1", 0), GREY),
+            ("round 0, campaign rep 2", load_probe("library_unsolved_s30_r2", 0), GREY)]
+    for k in (1, 2):
+        for rule, color in (("lex", BLUE), ("unsolved", ORANGE)):
+            rows.append((f"{rule}, final round, campaign rep {k}", load_probe(f"library_{rule}_s30_r{k}", 5), color))
+    fig, ax = plt.subplots(figsize=(8.4, 4.2))
+    out, ys = {}, []
+    for i, (name, run, color) in enumerate(rows):
+        r = outcome_array(run).mean(axis=2).ravel()          # 27 programs, pass rate of each over its seeds
         m, sd = float(r.mean()), float(r.std(ddof=1))
-        y += 0.6 * (y >= 3)
+        y = i + 0.6 * (i >= 5)
+        ys.append(y)
         ax.errorbar(m, y, xerr=sd, fmt="o", color=color, markersize=8, capsize=4, elinewidth=1.8, markeredgecolor=SURFACE)
         ax.text(0.62, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
         out[name] = {"mean": round(m, 3), "sd": round(sd, 3), "n_programs": int(r.size)}
     numbers["noise_all"] = out
-    ys = [i + 0.6 * (i >= 3) for i in range(len(rows))]
     ax.set_yticks(ys, [n for n, _, _ in rows])
     ax.invert_yaxis()
     ax.set_xlim(0, 0.8)
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
-    ax.set_xlabel("pass rate of a program over 15 seeds: mean ± SD over the 27 programs")
-    fig.suptitle("Noise floor: all 27 programs, three generations from the same empty library, and the two arms",
+    ax.set_xlabel("pass rate of a program: mean ± SD over the 27 programs")
+    fig.suptitle("Noise floor: five generations from the same empty library, and the final round of each arm",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)
@@ -237,8 +159,6 @@ def fig_noise(numbers: dict, noise: dict) -> None:
 def main() -> None:
     numbers: dict = {}
     noise = noise_batches()
-    fig_arms(numbers, noise)
-    fig_heatmap(numbers)
     fig_noise(numbers, noise)
     (FIGS / "numbers.json").write_text(json.dumps(numbers, indent=2) + "\n")
     print(json.dumps(numbers, indent=1)[:900])

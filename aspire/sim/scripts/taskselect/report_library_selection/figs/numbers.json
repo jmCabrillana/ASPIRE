@@ -1,105 +1,5 @@
 {
-  "all_lex": [
-    {
-      "value": 0.091,
-      "ci95": [
-        0.02,
-        0.173
-      ]
-    },
-    {
-      "value": 0.064,
-      "ci95": [
-        0.007,
-        0.16
-      ]
-    },
-    {
-      "value": 0.057,
-      "ci95": [
-        0.015,
-        0.104
-      ]
-    },
-    {
-      "value": 0.141,
-      "ci95": [
-        0.039,
-        0.294
-      ]
-    }
-  ],
-  "all_unsolved": [
-    {
-      "value": 0.091,
-      "ci95": [
-        0.022,
-        0.175
-      ]
-    },
-    {
-      "value": 0.067,
-      "ci95": [
-        0.012,
-        0.133
-      ]
-    },
-    {
-      "value": 0.148,
-      "ci95": [
-        0.027,
-        0.333
-      ]
-    },
-    {
-      "value": 0.052,
-      "ci95": [
-        0.01,
-        0.116
-      ]
-    }
-  ],
-  "crash_pct_lex": [
-    12.6,
-    43.5,
-    24.2,
-    18.0
-  ],
-  "crash_pct_unsolved": [
-    12.6,
-    19.5,
-    3.7,
-    32.1
-  ],
-  "arm_difference": {
-    "all_round1": {
-      "lex_minus_unsolved": -0.002,
-      "ci95": [
-        -0.101,
-        0.121
-      ]
-    },
-    "all_round2": {
-      "lex_minus_unsolved": -0.091,
-      "ci95": [
-        -0.291,
-        0.052
-      ]
-    },
-    "all_round3": {
-      "lex_minus_unsolved": 0.089,
-      "ci95": [
-        -0.032,
-        0.269
-      ]
-    }
-  },
   "noise_all": {
-    "round 0 (shared, patched)": {
-      "mean": 0.091,
-      "sd": 0.212,
-      "n_programs": 27
-    },
     "fresh batch a": {
       "mean": 0.035,
       "sd": 0.087,
@@ -110,14 +10,39 @@
       "sd": 0.119,
       "n_programs": 27
     },
-    "lex arm, round 3": {
-      "mean": 0.141,
-      "sd": 0.25,
+    "round 0, pilot": {
+      "mean": 0.091,
+      "sd": 0.178,
       "n_programs": 27
     },
-    "unsolved arm, round 3": {
-      "mean": 0.052,
-      "sd": 0.167,
+    "round 0, campaign rep 1": {
+      "mean": 0.028,
+      "sd": 0.069,
+      "n_programs": 27
+    },
+    "round 0, campaign rep 2": {
+      "mean": 0.078,
+      "sd": 0.195,
+      "n_programs": 27
+    },
+    "lex, final round, campaign rep 1": {
+      "mean": 0.147,
+      "sd": 0.272,
+      "n_programs": 27
+    },
+    "unsolved, final round, campaign rep 1": {
+      "mean": 0.115,
+      "sd": 0.231,
+      "n_programs": 27
+    },
+    "lex, final round, campaign rep 2": {
+      "mean": 0.159,
+      "sd": 0.264,
+      "n_programs": 27
+    },
+    "unsolved, final round, campaign rep 2": {
+      "mean": 0.1,
+      "sd": 0.236,
       "n_programs": 27
     }
   }

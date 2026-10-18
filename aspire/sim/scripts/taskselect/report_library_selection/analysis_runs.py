@@ -16,10 +16,10 @@ from pathlib import Path
 import numpy as np
 
 OUT = Path(__file__).resolve().parents[3] / "outputs"
-RUNS = {"lex r1": "library_lex_r1", "unsolved r1": "library_unsolved_r1", "lex r2": "library_lex_r2", "unsolved r2": "library_unsolved_r2",
+RUNS = {"lex r2": "library_lex_r2", "unsolved r2": "library_unsolved_r2",
         "lex s30 r1": "library_lex_s30_r1", "unsolved s30 r1": "library_unsolved_s30_r1",
         "lex s30 r2": "library_lex_s30_r2", "unsolved s30 r2": "library_unsolved_s30_r2"}
-GENERATIONS = {"round 0, rep 1 (patched)": ("library_unsolved_r1", 0), "batch a": ("library_noise_a", 0), "batch b": ("library_noise_b", 0),
+GENERATIONS = {"batch a": ("library_noise_a", 0), "batch b": ("library_noise_b", 0),
                "round 0, rep 2": ("library_unsolved_r2", 0), "round 0, s30 rep 1": ("library_unsolved_s30_r1", 0),
                "round 0, s30 rep 2": ("library_unsolved_s30_r2", 0)}
 RNG = np.random.default_rng(0)
