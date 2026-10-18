@@ -129,15 +129,12 @@ def fig_noise(numbers: dict, noise: dict) -> None:
             ("round 0, pilot", load_probe("library_unsolved_r2", 0), GREY),
             ("round 0, campaign rep 1", load_probe("library_unsolved_s30_r1", 0), GREY),
             ("round 0, campaign rep 2", load_probe("library_unsolved_s30_r2", 0), GREY)]
-    for k in (1, 2):
-        for rule, color in (("lex", BLUE), ("unsolved", ORANGE)):
-            rows.append((f"{rule}, final round, campaign rep {k}", load_probe(f"library_{rule}_s30_r{k}", 5), color))
-    fig, ax = plt.subplots(figsize=(8.4, 4.2))
+    fig, ax = plt.subplots(figsize=(8.4, 3.0))
     out, ys = {}, []
     for i, (name, run, color) in enumerate(rows):
         r = outcome_array(run).mean(axis=2).ravel()          # 27 programs, pass rate of each over its seeds
         m, sd = float(r.mean()), float(r.std(ddof=1))
-        y = i + 0.6 * (i >= 5)
+        y = i
         ys.append(y)
         ax.errorbar(m, y, xerr=sd, fmt="o", color=color, markersize=8, capsize=4, elinewidth=1.8, markeredgecolor=SURFACE)
         ax.text(0.62, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
@@ -149,7 +146,7 @@ def fig_noise(numbers: dict, noise: dict) -> None:
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
     ax.set_xlabel("pass rate of a program: mean ± SD over the 27 programs")
-    fig.suptitle("Noise floor: five generations from the same empty library, and the final round of each arm",
+    fig.suptitle("Noise floor: five generations from the same empty library",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)

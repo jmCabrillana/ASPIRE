@@ -24,26 +24,6 @@
       "mean": 0.078,
       "sd": 0.195,
       "n_programs": 27
-    },
-    "lex, final round, campaign rep 1": {
-      "mean": 0.147,
-      "sd": 0.272,
-      "n_programs": 27
-    },
-    "unsolved, final round, campaign rep 1": {
-      "mean": 0.115,
-      "sd": 0.231,
-      "n_programs": 27
-    },
-    "lex, final round, campaign rep 2": {
-      "mean": 0.159,
-      "sd": 0.264,
-      "n_programs": 27
-    },
-    "unsolved, final round, campaign rep 2": {
-      "mean": 0.1,
-      "sd": 0.236,
-      "n_programs": 27
     }
   }
 }
