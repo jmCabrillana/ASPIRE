@@ -95,11 +95,6 @@
     }
   },
   "noise_all": {
-    "round 0 (shared, patched)": {
-      "mean": 0.091,
-      "sd": 0.212,
-      "n_programs": 27
-    },
     "fresh batch a": {
       "mean": 0.035,
       "sd": 0.087,
@@ -108,6 +103,21 @@
     "fresh batch b": {
       "mean": 0.074,
       "sd": 0.119,
+      "n_programs": 27
+    },
+    "fresh batch c": {
+      "mean": 0.091,
+      "sd": 0.178,
+      "n_programs": 27
+    },
+    "fresh batch d": {
+      "mean": 0.032,
+      "sd": 0.077,
+      "n_programs": 27
+    },
+    "fresh batch e": {
+      "mean": 0.077,
+      "sd": 0.191,
       "n_programs": 27
     },
     "lex arm, round 3": {

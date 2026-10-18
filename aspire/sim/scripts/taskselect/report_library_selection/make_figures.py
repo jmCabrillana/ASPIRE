@@ -207,27 +207,29 @@ def fig_heatmap(numbers: dict) -> None:
 # ---- figure 3: noise floor ---------------------------------------------------------------------------------------
 def fig_noise(numbers: dict, noise: dict) -> None:
     """Mean and SD over the 27 programs' pass rates: three generations from the same empty library, and the two arms."""
-    rows = [("round 0 (shared, patched)", load_probe("library_unsolved_r1", 0), INK), ("fresh batch a", noise["a"], GREY),
-            ("fresh batch b", noise["b"], GREY)]
+    rows = [("fresh batch a", noise["a"], GREY), ("fresh batch b", noise["b"], GREY),
+            ("fresh batch c", load_probe("library_unsolved_r2", 0), GREY),
+            ("fresh batch d", load_probe("library_unsolved_s30_r1", 0), GREY),
+            ("fresh batch e", load_probe("library_unsolved_s30_r2", 0), GREY)]
     rows += [(f"{a_} arm, round 3", load_probe(d, 3), c) for a_, (d, c, _) in ARMS.items()]
-    fig, ax = plt.subplots(figsize=(8.4, 3.2))
+    fig, ax = plt.subplots(figsize=(8.4, 3.8))
     out = {}
     for y, (name, run, color) in enumerate(rows):
-        r = outcome_array(run).mean(axis=2).ravel()          # 27 programs, pass rate of each over 15 seeds
+        r = outcome_array(run)[:, :, :15].mean(axis=2).ravel()          # 27 programs, pass rate of each over seeds 51-65
         m, sd = float(r.mean()), float(r.std(ddof=1))
-        y += 0.6 * (y >= 3)
+        y += 0.6 * (y >= 5)
         ax.errorbar(m, y, xerr=sd, fmt="o", color=color, markersize=8, capsize=4, elinewidth=1.8, markeredgecolor=SURFACE)
         ax.text(0.62, y, f"{m:.3f} ± {sd:.3f}", va="center", fontsize=9, color=INK)
         out[name] = {"mean": round(m, 3), "sd": round(sd, 3), "n_programs": int(r.size)}
     numbers["noise_all"] = out
-    ys = [i + 0.6 * (i >= 3) for i in range(len(rows))]
+    ys = [i + 0.6 * (i >= 5) for i in range(len(rows))]
     ax.set_yticks(ys, [n for n, _, _ in rows])
     ax.invert_yaxis()
     ax.set_xlim(0, 0.8)
     ax.grid(axis="x", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
     ax.set_xlabel("pass rate of a program over 15 seeds: mean ± SD over the 27 programs")
-    fig.suptitle("Noise floor: all 27 programs, three generations from the same empty library, and the two arms",
+    fig.suptitle("Noise floor: all 27 programs, five generations from the same empty library, and the two arms",
                  x=0.01, ha="left", fontsize=11, fontweight="bold")
     fig.tight_layout()
     fig.savefig(FIGS / "fig3_noise_floor.png", dpi=160)
