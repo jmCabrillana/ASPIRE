@@ -51,48 +51,33 @@ repetition, 0.075 with 2, 0.061 with 3, 0.053 with 4, 0.043 with 6. A result bel
 Writers read them as context; programs never import them. A build starts from the empty library `L00`, and each repair
 produces the next one (`L01`, `L02`, ...). Every version is stored in `outputs/<run>/library/Lnn`.
 
-**One round (pseudo-code).**
+**Algorithm.**
 
 ```
-L <- empty library                                   # L00
-for t in 0 .. R-1:                                   # R = 5 repairs in the campaign
-    for task in pool:                                # 9 swap tasks
-        programs[task] <- 3 fresh zero-shot programs written from L, differing in strategy
-    for program in programs: outcome[program][seed] <- run in simulator, seeds 51..80    # 27 x 30 trials
-    unsolved <- tasks with no program that passes all seeds
-    task <- select(rule, unsolved, outcome, traces)          # lex or unsolved (below)
-    best, findings <- repair(task, start, dev seeds 51..65, <= 5 iterations)
-    L <- promote(L, findings)                        # the library update, below
-    save L as L(t+1)
-final probe: write K programs per task from the last library, run them on seeds 51..80
+L <- empty library
+repeat 5 times:
+    P <- 3 fresh programs per task, written from L          # 9 tasks
+    run P on seeds 51..80                                   # 810 trials
+    U <- tasks where no program passes every seed
+    t <- pick(U)                                            # the only difference between arms
+    findings <- repair(t)                                   # up to 5 tries, dev seeds 51..65
+    L <- L + lessons(findings)                              # add rules, never remove
+final: 3 fresh programs per task from L, run on seeds 51..80
+
+pick(U), arm "unsolved":  a random task of U
+pick(U), arm "lex":       the task of U with the largest (split, shares, trace), compared in that order
+    split  = how much programs disagree per seed (entropy of how many pass)
+    shares = how many tasks of U fail at the same stage
+    trace  = how varied the failure traces are
 ```
 
-**Task selection.**
+A trial's failure stage comes from its API trace only: `crash`, `perceive` (object not found), `no_motion`, `no_close`, `air`
+(closed on nothing), `slip` (held, then lost), `held_end`, `released` (placed wrong). `LEX.md` has a worked example.
 
-```
-select(unsolved, outcome, traces):
-    if rule == "unsolved": return uniform_random(unsolved)       # baseline (salted seed)
-    for task in unsolved:
-        split(task)  = mean over seeds s of entropy of (number of programs that pass seed s)
-        shares(task) = number of unsolved tasks whose most common failing stage equals task's
-        trace(task)  = entropy of the (failure stage, printed failure tag) signatures of all trials of task
-    return argmax over unsolved of (split, shares, trace)    # lexicographic; ties: salted random
-```
-
-Failure stage of a trial is read from its API trace only: `crash`, `perceive` (object not found), `no_motion`, `no_close`, `air`
-(closed on nothing), `slip` (held, then lost), `held_end`, `released` (placed wrong), `pass`. `LEX.md` has a worked example.
-
-**Repair (the fix loop).**
-
-```
-repair(task, start, dev seeds):
-    read pass and fail traces of the 3 probe programs; compare programs that pass a seed another fails
-    for i in 1 .. 5:
-        write one task-level program (no seed branches, no hard-coded coordinates)
-        run it on the 15 dev seeds; diagnose its failed seeds from traces
-    kept <- iteration with most passes (ties: the later one)
-    write findings.md: root causes, pass count of every iteration, "Generalizable Patterns"
-```
+**Repair.** The agent reads the passing and failing traces of the task's 3 programs, then writes up to 5 task-level programs
+(no seed branches, no hard-coded coordinates), each run on the 15 dev seeds and diagnosed from its failed trials. The kept
+program is the one with the most passes (ties: the later one). It writes `findings.md`: root causes, pass counts and
+"Generalizable Patterns".
 
 **Library update rule (promotion).** After the repair, the coordinator reads `findings.md`, edits the skill files and logs it in a
 ledger (`skill_promotions.jsonl`: files changed, reason). Rules in force:
@@ -357,11 +342,9 @@ library only grows.
 (the gate), `prompts/repair_harness_addendum.md`, and `run_reps.py --treatment harness`.
 
 ```
-promote_with_gate(L, task, start, kept, findings):
-    A <- pass count of start on acceptance seeds 81..95          # seeds used by no repair and no probe
-    B <- pass count of kept on the same seeds
-    if B - A >= 3: L <- add lessons from findings to L
-    else:          L unchanged; log "rejected (A, B)"
+accept(kept, start):   run both on fresh seeds 81..95
+    if passes(kept) - passes(start) >= 3:  add the lessons to L
+    else:                                   leave L unchanged
 ```
 
 Planned design: arms `unsolved`, `unsolved + tool`, `unsolved + gate`, `unsolved + both`, at least 4 repetitions, budget counted
