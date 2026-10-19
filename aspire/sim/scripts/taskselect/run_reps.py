@@ -164,7 +164,7 @@ def run_arm(rule: str, rep: int) -> None:
     session = f"arm-{rule}-r{rep}"
     log(f"rep {rep}: start arm {rule}")
     start_claude(session, prompt)
-    wait_for(final, session, 3 * ROUNDS + 6, f"arm {rule} r{rep}")
+    wait_for(final, session, 4 * ROUNDS + 10, f"arm {rule} r{rep}")
     log(f"rep {rep}: arm {rule} done")
 
 
