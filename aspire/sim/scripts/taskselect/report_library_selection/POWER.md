@@ -25,7 +25,7 @@ Levels: build `b` (one full run of 40 rounds), task `i`, program `j`, seed `s`.
   where $\mu_i$ is the mean success probability of a fresh program for task $i$ under that library.
 - A program has its own success probability $q_{ij}=\mu_i+w_{ij}$. The **writer luck** $w_{ij}$ has mean 0 and variance
   $\sigma_{q,i}^2$ (programs differ a lot in strategy).
-- Given $q_{ij}$, each seed is a Bernoulli$(q_{ij})$ trial with variance $q(1-q)$; let $\pi=\mathbb E[q(1-q)]$ be its mean over programs and tasks.
+- Given $q_{ij}$, each seed is a $\mathrm{Bernoulli}(q_{ij})$ trial with variance $q(1-q)$; let $\pi=\mathbb E[q(1-q)]$ be its mean over programs and tasks.
 
 **Step 1: variance of one measurement of a fixed library.** Programs and seeds are independent, so by the law of total variance, for task $i$:
 $\operatorname{Var}(\bar y_i\mid L)=\big(\sigma_{q,i}^2+\pi_i/S\big)/K$. Averaging $N$ independent tasks:
