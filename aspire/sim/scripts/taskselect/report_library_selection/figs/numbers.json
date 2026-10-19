@@ -120,6 +120,11 @@
       "sd": 0.191,
       "n_programs": 27
     },
+    "fresh batch f": {
+      "mean": 0.089,
+      "sd": 0.212,
+      "n_programs": 27
+    },
     "lex arm, round 3": {
       "mean": 0.141,
       "sd": 0.25,
