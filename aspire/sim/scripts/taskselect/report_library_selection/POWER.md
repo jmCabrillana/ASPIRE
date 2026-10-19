@@ -114,7 +114,10 @@ Held-out measurement set $N=20$. $\delta$ = gap of the arms (`lex` minus baselin
 |---|---|---|
 | tasks | 70 build pool, 20 held out | held-out tasks are only measured, never repaired or used for selection |
 | rounds | 40 repairs, at most 1 per task | 40 of 70 pool tasks; no repeats needed |
-| build-time probe | each round a random **10 candidate tasks** x 3 programs x 5 seeds = 150 trials | `lex` and `unsolved` only need outcomes of the candidates; a full 70-task probe would be 1050 to 6300 trials per round |
+| repair method | **`fixloop`**: one lineage, one program per iteration, up to **5 iterations**, run on **15 development seeds** (51-65); same in both arms | the campaign's repair; about 15 min per repair, so simulator time stays small. Evosearch (8 candidates per iteration) would cost about 8 times more trials per iteration and has the same selection bias |
+| repair stop and keep | stop early at 15 of 15; otherwise the budget; keep the iteration with most passes (ties: the later one) | as in `library_loop.py repaired` |
+| lesson into the library | the agent writes `findings.md`; the coordinator adds the generalizable patterns to the skill files (additions only) | same rule in both arms; no acceptance test (the validated-repair variant would be a separate arm) |
+| build-time probe | each round a random **10 candidate tasks** x 3 programs x 5 seeds = 150 trials, on seeds **66-70** (not the repair seeds, so the repaired task is not favoured) | `lex` and `unsolved` only need outcomes of the candidates; a full 70-task probe would be 1050 to 6300 trials per round |
 | measurement set | the 20 held-out tasks, **K = 12 programs, S = 5 seeds** (1200 trials) | cheapest row of the table above |
 | measurement times | rounds 20 and 40 (and 10, 30 with K = 3, S = 5 for the curve only) | linear growth: end points carry the information; the early effect is below the noise (gain at round 5 is about 0.0125) |
 | start library | measure once, 30 programs per held-out task | its noise then drops out of the gain reading |
