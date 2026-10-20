@@ -1,173 +1,82 @@
 ---
 name: grasp
-description: Structural template for pick-and-place programs. Covers the standard grasp-lift-place code skeleton, make_topdown_quat(), pre-grasp/lower/close sequence, and placement pattern. No task-specific strategies — those are discovered through experiment.
+description: Gripper feedback caveats discovered during fix-loop debugging. close_gripper() return value, and when gripper-open-fraction is (and isn't) a useful grasp-success signal.
 ---
 
-# Grasp — Code Template
+# Grasp — Gripper Feedback
 
-> This skill provides the **structural skeleton** for pick-and-place programs.
-> Task-specific strategies (object-specific offsets, SAM3 prompts, placement geometry)
-> are discovered through experiment and added here as the skill library grows.
+## close_gripper() does not return gripper width
 
----
+`close_gripper()` returns `None`. The `gripper_width` field visible in
+`trace.json`'s `close_gripper` entries comes from external trace/sandbox
+instrumentation around the call, not from the function's return value — it is
+not readable by generated code. Do not branch retry logic on an assumed
+return value from `close_gripper()`.
 
-## Standard Pick-and-Place Template
+If grasp-quality feedback is needed inside generated code, use real
+proprioception instead:
 
 ```python
-import numpy as np
-from scipy.spatial.transform import Rotation
-
-def make_topdown_quat(yaw_deg=0):
-    """Top-down gripper orientation, rotated yaw_deg around Z."""
-    R = Rotation.from_euler('z', yaw_deg, degrees=True).as_matrix() @ \
-        np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
-    q = Rotation.from_matrix(R).as_quat()  # xyzw
-    return np.array([q[3], q[0], q[1], q[2]])  # wxyz for API
-
-# --- Observe ---
 obs = get_observation()
-cam = obs["agentview"]
-rgb = cam["images"]["rgb"]
-depth = cam["images"]["depth"]
-depth_img = depth[:, :, 0] if len(depth.shape) == 3 else depth
-K = cam["intrinsics"]
-E = cam["pose_mat"]
+gripper_open_fraction = obs["robot_cartesian_pos"][7]  # 0 = closed, 1 = open
+```
 
-# --- Localize pick object via SAM3 ---
-masks = segment_sam3_text_prompt(rgb, "<object prompt>")
-if not masks:
-    raise RuntimeError("SAM3: no masks for pick object")
-best = max(masks, key=lambda d: d["score"])
-obj_pts = mask_to_world_points(best["mask"].astype(np.uint8), depth_img, K, E)
-obj_center = obj_pts.mean(axis=0)
+**Provenance:** `libero_goal_swap/turn_on_the_stove`, dev seeds 51-65, fix-loop
+round 0 of `library_lex_s10_r5`. An iteration that assumed `close_gripper()`
+returned a width never triggered its retry path (confirmed via `gripper_width
+= None` in the eval log) while still applying an unconditional extra-descend
+offset, regressing pass rate from 4/10 (probe) to 4/15.
 
-# --- Grasp via GraspNet (preferred for irregular objects) ---
-grasp_poses, grasp_scores = plan_grasp(depth, K, best["mask"])
-best_grasp_world, _ = select_top_down_grasp(grasp_poses, grasp_scores, E)
-if best_grasp_world is None:
-    best_grasp_world = E @ grasp_poses[grasp_scores.argmax()]
-grasp_pos, quat = decompose_transform(best_grasp_world)
+## Gripper-open-fraction doesn't discriminate grasp success on thin/small objects
 
-open_gripper()
-goto_pose(grasp_pos, quat, z_approach=0.15)
-goto_pose(grasp_pos, quat)
-close_gripper()
+`obs["robot_cartesian_pos"][7]` is real signal, but on a thin object (a
+burner knob) it reads ~0.008-0.05 on nearly every trial regardless of whether
+the trial ultimately passes — the object simply doesn't hold the gripper much
+open either way. Don't gate a retry/branch on this signal for thin or small
+objects (knobs, dials, buttons, thin handles) without first checking, for the
+object class at hand, that the signal actually separates pass from fail.
 
-# --- OR: Grasp via make_topdown_quat (simple flat objects) ---
-# quat = make_topdown_quat(yaw_deg=0)
-# grasp_pos = np.array([obj_center[0], obj_center[1], obj_center[2] + <z_offset>])
-# open_gripper()
-# joints = solve_ik((grasp_pos + np.array([0, 0, 0.08])).tolist(), quat.tolist())
-# if joints is not None: move_to_joints(joints)
-# joints = solve_ik(grasp_pos.tolist(), quat.tolist())
-# if joints is not None: move_to_joints(joints)
-# close_gripper()
+**Provenance:** same source as above. An iteration that retried whenever this
+fraction was `< 0.03` fired on almost every trial (pass and fail alike),
+adding motion/time with no discriminating power; net pass rate 5/15, no
+better than the baseline.
 
-# --- Lift ---
-lift_pos = np.array([grasp_pos[0], grasp_pos[1], grasp_pos[2] + 0.15])
-joints = solve_ik(lift_pos.tolist(), quat.tolist())
-if joints is not None: move_to_joints(joints)
+**Extension — an anomalously *high* reading doesn't discriminate either.**
+On the same task, `libero_goal_swap/turn_on_the_stove`, dev seeds 51-65,
+fix-loop round 4 of `library_lex_s10_r5`: several trials showed one cycle's
+post-close gripper width spike to 0.27-1.0 (vs. the normal thin-knob range of
+~0.005-0.05). This spike appeared on both passing trials (52, 55, 56, 61) and
+failing trials (58, 60, 62, 63, 64) — don't add a retry/abort gate on a
+*high* reading either, for thin/small-object grasps, without first checking
+it separates outcomes for the specific object/task.
 
-# --- Re-observe for placement target ---
-obs2 = get_observation()
-rgb2 = obs2["agentview"]["images"]["rgb"]
-d2 = obs2["agentview"]["images"]["depth"]
-d2 = d2[:, :, 0] if len(d2.shape) == 3 else d2
-K2 = obs2["agentview"]["intrinsics"]
-E2 = obs2["agentview"]["pose_mat"]
+## A confirmed lift does not mean the held orientation is safe to change
 
-target_masks = segment_sam3_text_prompt(rgb2, "<target prompt>")
-if not target_masks:
-    raise RuntimeError("SAM3: no masks for target")
-best_t = max(target_masks, key=lambda d: d["score"])
-tgt_pts = mask_to_world_points(best_t["mask"].astype(np.uint8), d2, K2, E2)
-tgt_center = tgt_pts.mean(axis=0)
-surface_z = tgt_pts[:, 2].max()
+Never reorient the wrist while an object is held only by a rim/edge/friction
+grasp (not a firm parallel-jaw clamp through its full width). Compute the
+grasp quaternion once at pick time and reuse it unchanged for every later
+waypoint (pregrasp, grasp, lift, place-above, place, retreat) — do not
+introduce a second, separately-chosen orientation (e.g. a "nice" fixed
+top-down quat) for the placement motion:
 
-# --- Transport ---
-above_target = np.array([tgt_center[0], tgt_center[1], lift_pos[2]])
-joints = solve_ik(above_target.tolist(), quat.tolist())
-if joints is not None: move_to_joints(joints)
+```python
+ok, grasp_quat = try_pick(obb, descend_frac, yaw)
+held_quat = grasp_quat  # save it
 
-# --- Place ---
-release_pos = np.array([tgt_center[0], tgt_center[1], surface_z + 0.03])
-joints = solve_ik(release_pos.tolist(), quat.tolist())
-if joints is not None: move_to_joints(joints)
+# every placement waypoint reuses held_quat — never a second target quat
+place_quat = held_quat
+safe_move(solve_ik(place_above, place_quat))
+safe_move(solve_ik(place_pos, place_quat))
 open_gripper()
 ```
 
----
-
-## Key Conventions
-
-**Depth normalization** — always do this before any 3D call:
-```python
-depth_img = depth[:, :, 0] if len(depth.shape) == 3 else depth
-```
-
-**SAM3 result** — list of dicts, pick highest score:
-```python
-best = max(masks, key=lambda d: d["score"])
-obj_pts = mask_to_world_points(best["mask"].astype(np.uint8), depth_img, K, E)
-```
-
-**GraspNet TCP offset** — `plan_grasp` already applies a 0.12 m offset along the grasp Z axis
-to its returned poses; do not add another TCP compensation on top of GraspNet grasps.
-
-**GraspNet grasp selection** — use `select_top_down_grasp`, not a manual z-axis loop:
-```python
-grasp_poses, grasp_scores = plan_grasp(depth, K, mask)
-best_grasp_world, _ = select_top_down_grasp(grasp_poses, grasp_scores, E)
-if best_grasp_world is None:
-    best_grasp_world = E @ grasp_poses[grasp_scores.argmax()]
-```
-
-**IK guard** — always check `if joints is not None` before `move_to_joints`.
-
-**Held-check after close** — verify the grasp from the gripper state before lifting.
-- Trigger: the target is wider than the gripper opening at some height (e.g. a bowl rim), so a top-down grasp can close on air. A close that finishes at a near-zero width is an air grasp even though `close_gripper()` returned normally.
-- Code (placeholders: `HELD_THRESHOLD`, `GRASP_OFFSETS`, `TOP_DOWN_QUAT`, `base_z`, `cx`, `cy`):
-  ```python
-  HELD_THRESHOLD = 0.03  # normalized: 0 = closed, 1 = open
-  def gripper_pos():
-      return float(get_observation()["robot_cartesian_pos"][-1])
-  for offset in GRASP_OFFSETS:  # ascending heights above object base
-      open_gripper()
-      goto_pose(np.array([cx, cy, base_z + offset]), TOP_DOWN_QUAT, z_approach=0.12)
-      close_gripper()
-      if gripper_pos() >= HELD_THRESHOLD:
-          break
-      goto_pose(np.array([cx, cy, base_z + offset + 0.12]), TOP_DOWN_QUAT)
-  ```
-- Why it works + evidence: it separated air grasps (~0.015) from outer-wall contacts (0.11–0.21) on every dev seed of libero_goal_swap/put_the_bowl_on_the_stove (seeds 51–65; source `outputs/libero_fix_loop/libero_goal_swap/put_the_bowl_on_the_stove/findings.md`, 2026-10-05). It detects a bad grasp but did not make that task succeed; no seed flipped to reward 1.0. Pair it with a post-lift re-check (below), since a held reading can still slip during lift.
-- Post-lift re-check: re-read the same signal after the lift. A drop below `HELD_THRESHOLD` means the object has slipped out; open, back off, and retry at the next height. Observed on seeds 51 (0.140→0.086), 57 (0.125→0.091), 59 (0.042→0.032). It catches the slip but does not prevent it.
-
-**TCP offset for placement**: `goto_pose(pos, quat)` moves the **WRIST** to `pos`; fingertips extend below the wrist. Calibrate per robot/gripper config and adjust placement Z accordingly.
-
-**Top-level call** — if you define a `run()` function, call it at the end:
-```python
-def run():
-    ...
-run()
-```
-
-**Gripper width thresholds** — add validated per-object thresholds here as you discover them:
-
-| Object | Good grasp (gw >) | Air grasp (gw <) | Notes |
-|---|---|---|---|
-| silver bowl (libero_goal_swap, put_the_bowl_on_the_stove) | 0.11 (outer-wall contact at base) | 0.03 | Rim ~0.106×0.110 m is wider than the ~0.08 m opening; only the base pinch contacts, and it slips on lift. See held-check above. |
-
----
-
-## Object Geometry Utilities
-
-```python
-# Z range (grasp height tuning)
-z_min, z_max = obj_pts[:, 2].min(), obj_pts[:, 2].max()
-height = z_max - z_min
-
-# OBB (orientation-aware bounding box)
-obb = get_oriented_bounding_box_from_3d_points(obj_pts)
-# Keys: "center" (3,), "extent" (3,), "R" (3x3 rotation matrix)
-obb_center = obb["center"]
-```
+**Provenance:** `libero_goal_swap/put_the_bowl_on_the_stove`, dev seeds
+51-65, fix-loop round 3 of `library_lex_s10_r5`. A zero-shot program grasped
+the bowl with one quaternion and then forced a different, hardcoded top-down
+quaternion for placement; it achieved a confirmed lift (height rise
+~0.21-0.23m) on 10/10 probed seeds yet placed successfully on 0/10 — the
+reorientation itself was isolated as the cause (place XY/height were
+otherwise unchanged). Removing the reorientation (reusing the grasp quat
+throughout) raised the pass rate to 2-3/15 on the same pick strategy. A
+confirmed lift only proves the grasp sufficed for a straight vertical
+transport, not for an off-axis wrist rotation.

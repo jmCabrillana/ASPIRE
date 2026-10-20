@@ -9,7 +9,6 @@ venv/
 env/
 !aspire/real/cap/env/
 !aspire/real/cap/env/**
-.env
 .openrouterkey
 .nvinferencekeys
 NV_INFERENCE_CLAUDE.md
@@ -70,3 +69,4 @@ aspire/sim/docs/progress/
 aspire/sim/scripts/taskselect/descriptors/
 .gitignore
 branch_structure.json
+config.bat
