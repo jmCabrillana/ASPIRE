@@ -431,3 +431,27 @@ def test_lex_breaks_split_ties_by_shared_failure(tmp_path, sim_root, monkeypatch
     ll.main(["select", str(run), "--round", "0", "--rule", "lex", "--force"])
     assert json.loads((rd / "selection.json").read_text())["task"] in pool[2:7]
     assert "perceive" in (rd / "repair_prompt.md").read_text()
+
+
+def test_candidate_rounds_probe_a_sample_and_never_repeat_a_repaired_task(sim_root, monkeypatch):
+    monkeypatch.setattr(ll, "run_eval", fake_eval({}))
+    run = sim_root / "run"
+    new_run(run, "--candidates", "3")
+    pool = ll.load_state(run)["pool"]
+    assert len(pool) >= 4
+    cands = json.loads((ll.round_dir(run, 0) / "candidates.json").read_text())
+    assert len(cands) == 3 and set(cands) <= set(pool)
+    assert {d.name for d in (ll.round_dir(run, 0) / "programs").iterdir()} == {c.replace("/", "__") for c in cands}
+    for task in cands:
+        for name in ("candidate_A", "candidate_B"):
+            d = ll.round_dir(run, 0) / "programs" / task.replace("/", "__") / name
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "code.py").write_text("# p\n")
+    assert ll.main(["probe", str(run), "--round", "0", *PROBE]) == 0
+    probe = json.loads((ll.round_dir(run, 0) / "probe.json").read_text())
+    assert set(probe["tasks"]) == set(cands)
+    assert ll.main(["select", str(run), "--round", "0", "--rule", "unsolved"]) == 0
+    chosen = json.loads((ll.round_dir(run, 0) / "selection.json").read_text())["task"]
+    assert chosen in cands
+    state = ll.load_state(run)
+    assert set(state["unsolved"]) == set(pool)

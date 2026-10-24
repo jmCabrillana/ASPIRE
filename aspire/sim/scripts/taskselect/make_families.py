@@ -129,6 +129,11 @@ FAMILIES: dict[str, dict] = {
             "LIVING_ROOM_SCENE4_stack_the_left_bowl_on_the_right_bowl_and_place_them_in_the_tray",
         ]],
     },
+    "libero_90": {
+        "relation": "weak",
+        "description": "All 90 LIBERO-90 tasks: 70 to build a library, 20 held out (library_loop plan --eval-split 20).",
+        "suites": {"libero_90": "ALL"},
+    },
     "libero10_long": {
         "relation": "weak",
         "description": "The ten long-horizon LIBERO-10 tasks (different scenes, two-step goals). Expected to "

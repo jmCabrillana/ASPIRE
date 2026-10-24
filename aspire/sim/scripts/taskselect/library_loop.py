@@ -108,6 +108,12 @@ def task_dir_name(task: str) -> str:
     return task.replace("/", "__")
 
 
+def round_tasks(run: Path, state: dict, t: int) -> list[str]:
+    """Tasks planned in round t: the sampled candidates (plan --candidates), else every task of A."""
+    f = round_dir(run, t) / "candidates.json"
+    return json.loads(f.read_text()) if f.exists() else state["pool"]
+
+
 def no_debug_seeds(seeds: list[int], what: str) -> list[int]:
     if DEBUG_SEEDS & set(seeds):
         fail(f"{what} seeds {sorted(DEBUG_SEEDS & set(seeds))} are fix-loop debug seeds (51-65)")
@@ -231,11 +237,20 @@ def cmd_plan(args) -> int:
         fail(f"round {args.round} cannot start: {len(state['rounds'])} round(s) finished")
     require_library(run, args.round)
     rd = round_dir(run, args.round)
-    for task in state["pool"]:
+    if args.candidates:
+        repaired = {r["task"] for r in state["rounds"]}
+        eligible = [t for t in state["unsolved"] if t not in repaired]
+        if len(eligible) < args.candidates:
+            fail(f"only {len(eligible)} unsolved, not yet repaired tasks left for {args.candidates} candidates")
+        rd.mkdir(parents=True, exist_ok=True)
+        picked = core.random_order(state["family"], eligible, f"candidates-{args.round}-{args.salt}")[:args.candidates]
+        (rd / "candidates.json").write_text(json.dumps(sorted(picked), indent=2) + "\n")
+    tasks = round_tasks(run, state, args.round)
+    for task in tasks:
         (rd / "programs" / task_dir_name(task)).mkdir(parents=True, exist_ok=True)
     print(f"round {args.round}: write {state['k']} zero-shot programs (candidate_A..) from L{args.round:02d} "
           f"into each of:")
-    for task in state["pool"]:
+    for task in tasks:
         print(f"  {rd / 'programs' / task_dir_name(task)}")
     return 0
 
@@ -249,7 +264,8 @@ def cmd_probe(args) -> int:
         fail(f"probe seeds {seeds} differ from the run's {state['probe_seeds']}")
     rd = round_dir(run, args.round)
     probe = {"seeds": seeds, "tasks": {}}
-    for task in state["pool"]:
+    tasks = round_tasks(run, state, args.round)
+    for task in tasks:
         tdir = rd / "programs" / task_dir_name(task)
         programs = programs_in(tdir, state["k"], "write them first")
         run_eval(tdir, *task.split("/", 1), seeds, args.gpu)
@@ -262,12 +278,15 @@ def cmd_probe(args) -> int:
             "passing": passing_program(outcomes),
         }
     state["probe_seeds"] = seeds
-    state["unsolved"] = [t for t in state["pool"] if not probe["tasks"][t]["passing"]]
-    probe["coverage"] = 1 - len(state["unsolved"]) / len(state["pool"])
+    if tasks is state["pool"]:
+        state["unsolved"] = [t for t in state["pool"] if not probe["tasks"][t]["passing"]]
+    else:
+        state["unsolved"] = [t for t in state["unsolved"] if t not in tasks or not probe["tasks"][t]["passing"]]
+    probe["coverage"] = 1 - sum(t in state["unsolved"] for t in tasks) / len(tasks)
     (rd / "probe.json").write_text(json.dumps(probe, indent=2) + "\n")
     save_state(run, state)
-    print(f"round {args.round}: L{args.round:02d} solves {len(state['pool']) - len(state['unsolved'])}"
-          f"/{len(state['pool'])} tasks of A zero-shot on seeds {seeds}")
+    print(f"round {args.round}: L{args.round:02d} solves {round(probe['coverage'] * len(tasks))}"
+          f"/{len(tasks)} probed tasks of A zero-shot on seeds {seeds}")
     for task, p in probe["tasks"].items():
         passes = "".join(str(sum(p["outcomes"][c])) for c in sorted(p["outcomes"]))
         print(f"  {task.split('/')[-1][:40]:40s} passes {passes}  split {p['split']:.2f}  trace {p['trace']:.2f}"
@@ -287,9 +306,10 @@ def cmd_select(args) -> int:
         if Path(previous["repair"]["task_dir"]).exists():
             fail(f"the repair of {previous['task']} already started; pass --force to select again")
     probe = json.loads((rd / "probe.json").read_text())
-    todo = state["unsolved"]
-    if args.rule in ("unsolved", "split", "trace") and not todo:
-        fail("every task of A is solved")
+    planned = round_tasks(run, state, args.round)
+    todo = [t for t in planned if t in state["unsolved"]]
+    if args.rule in ("unsolved", "split", "trace", "lex") and not todo:
+        fail("every probed task of A is solved")
     scores = None
     if args.rule == "order":
         candidates = [core.pick_random(state["family"], state["pool"], [r["task"] for r in state["rounds"]], args.salt)]
@@ -460,6 +480,9 @@ def main(argv=None) -> int:
     plan.add_argument("--pool"); plan.add_argument("--k", type=int, default=3)
     plan.add_argument("--repair-iters", type=int, default=5)
     plan.add_argument("--repair", choices=sorted(REPAIRS), default="fixloop")
+    plan.add_argument("--candidates", type=int, help="probe and repair only a random sample of this many unsolved, "
+                      "not yet repaired tasks per round")
+    plan.add_argument("--salt", default="r1", help="seed of the candidate sample")
     plan.add_argument("--library"); plan.add_argument("--eval-tasks", nargs="+")
     plan.add_argument("--eval-split", type=int, default=0); plan.add_argument("--checkpoints", type=int, nargs="*", default=[])
     probe = sub.add_parser("probe"); probe.add_argument("run"); probe.add_argument("--round", type=int, required=True)

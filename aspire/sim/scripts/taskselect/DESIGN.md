@@ -50,6 +50,7 @@ itself.
 | `library_9_swap` | weak | 9 | `library_9` on the swap suites (object positions randomised per seed) | the setting of the tc1 task_selection runs; harder, so check round 0 is not all-fail |
 | `three_suites` | weak | 12 | three scenes (goal / object / spatial swap), short tasks | tests whether descriptors predict disagreement across scenes |
 | `mixed_short_skills` | weak | 12 | LIBERO-90 tasks from kitchen, living room, study: drawer, microwave, knob, pick-place, stacking | the hard case: prediction of disagreement must come from skill content |
+| `libero_90` | weak | 90 | all LIBERO-90 tasks (kitchen, living room, study); 70 to build a library, 20 held out (`library_loop.py plan --eval-split 20`) | scale-up of the library build (`scripts/taskselect/scale/`) |
 | `libero10_long` | weak | 10 | long-horizon two-step tasks, many scenes | likely floor effect (all fail); only usable if the viability probe passes |
 
 Recommended order: `goal_swap` first (headline), then `bowl_stove_perturbed` (tight) and `three_suites` or
