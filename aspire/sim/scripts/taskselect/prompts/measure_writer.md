@@ -1,5 +1,7 @@
 Write fresh zero-shot programs for the held-out tasks of a skill-library build, from ONE fixed skill library
 (scripts/taskselect/scale/measure.py). Start immediately; there is no preflight gate. Working directory: aspire/sim.
+You yourself, and every subagent, read nothing under outputs/ except the LIBRARY directory (no example programs from other runs);
+take the program format only from scripts/libero/replay_trial.py and .claude/libero/api-reference.md.
 
 LIBRARY = {{LIB}}   (read every .md file in this directory when briefing yourself; it is the skill library to write from. Do NOT
 read .claude/libero/skills/, it holds a different library. If the directory is empty the library is empty on purpose.)
