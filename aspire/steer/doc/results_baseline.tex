@@ -7,10 +7,35 @@ suite & 0 & 1 & 2 & 3 & 4 & 5 & 6 & 7 & 8 & 9 & mean \\
 \texttt{libero\_goal} & 1.0 & 1.0 & 1.0 & 0.5 & 0.9 & 0.6 & 0.4 & 1.0 & 1.0 & 1.0 & 0.84 \\
 \texttt{libero\_goal\_lan} & 0.2 & 0.7 & 0.7 & 0.0 & 0.8 & 0.0 & 0.2 & 0.1 & 0.1 & 0.5 & 0.33 \\
 \texttt{libero\_goal\_swap} & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.00 \\
-\texttt{libero\_spatial} & 1.0 &  &  &  &  &  &  &  &  &  & 1.00 \\
+\texttt{libero\_spatial} & 1.0 & 0.5 & 0.8 & 1.0 & 0.6 & 0.9 & 1.0 & 0.9 & 0.4 & 0.7 & 0.78 \\
+\texttt{libero\_spatial\_lan} & 0.2 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 &  &  &  & 0.03 \\
+\texttt{libero\_spatial\_swap} & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.00 \\
 \bottomrule
 \end{tabular}
 \caption{Frozen SmolVLA (\texttt{lerobot/smolvla\_libero}): success rate per task (10 episodes, initial states 0--9). \texttt{\_swap}: object positions swapped; \texttt{\_lan}: paraphrased instruction.}
 \end{table}
 
-No steering sweep yet.
+\begin{table}[h]\centering\small
+\begin{tabular}{lcc}
+\toprule
+layer & +0$\sigma$ & +1$\sigma$ \\
+\midrule
+expert 3 & 0.00 & 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Fixed steering on \texttt{libero\_goal\_lan} task 7: direction \texttt{shift-libero\_goal}, success over held-out initial states (20 episodes); strength 0 is the frozen policy on the same states.}
+\end{table}
+
+\begin{table}[h]\centering\small
+\begin{tabular}{lcccc}
+\toprule
+layer & +0$\sigma$ & +1$\sigma$ & +2$\sigma$ & +4$\sigma$ \\
+\midrule
+vlm 3 & 0.00 & 0.00 & 0.00 & 0.00 \\
+vlm 7 & 0.05 & 0.05 & 0.00 & 0.00 \\
+vlm 11 & 0.00 & 0.00 & 0.00 & 0.00 \\
+vlm 15 & 0.00 & 0.00 & 0.00 & 0.00 \\
+\bottomrule
+\end{tabular}
+\caption{Fixed steering on \texttt{libero\_goal\_lan} task 7: direction \texttt{shift-libero\_goal}, success over held-out initial states (20 episodes); strength 0 is the frozen policy on the same states.}
+\end{table}

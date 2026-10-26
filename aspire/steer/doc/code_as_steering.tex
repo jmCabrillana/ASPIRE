@@ -101,6 +101,33 @@ Directions are contrasts of recorded activations (mean over tokens, per layer):
 (``pull the representation back towards the training distribution''); later, instruction pairs and directions found by
 the agent itself.
 
+\subsection{Offline lab}
+Simulator rollouts are the ground truth but cost seconds; most questions about the model can be asked offline.
+\texttt{scripts/run\_program.py --save-obs} stores the raw observation at every chunk start and every executed action. The lab
+(\texttt{steer/lab.py}) then predicts the 50-action chunk for any saved observation in about 0.5\,s with a \emph{fixed}
+flow-matching noise seed, so any change of the chunk is caused by the intervention. It captures per-token activations of any
+layer, edits them, and \emph{replaces} them with activations captured on another observation or another instruction (activation
+patching and swapping, by token span: agentview, wrist, instruction, state).
+
+\subsection{Neurons}
+The MLP neurons are the inputs of each layer's \texttt{down\_proj} (2560 per VLM layer). Two tools:
+\begin{itemize}
+\item \textbf{Attribution patching}: for any differentiable function $f$ of the (normalised) action chunk, the first-order effect
+of neuron $n$ is $\sum_{\text{tokens}} a_n\,\partial f/\partial a_n$, computed in one backward pass through the ten denoising
+steps for all neurons of the chosen layers.
+\item \textbf{Dosed pushes}, with the recipe used for LLM neuron steering: the added activation is
+\[
+\Delta a_n = \text{dose}\times\frac{\operatorname{median}_{\text{tokens}\,1:}\,\|r_L\|}{\|W_{\text{down}}[:,n]\|},
+\]
+where $r_L$ is the residual stream leaving layer $L$, so a dose of one moves the residual by about one typical norm along the
+neuron's output direction.
+\end{itemize}
+
+\subsection{Adapters}
+\texttt{steer/lora.py} wraps chosen linear layers of either stack with zero-initialised low-rank adapters, trains them with
+SmolVLA's own flow-matching loss on saved (observation, executed chunk) pairs (40 steps take about 3\,s), and detaches them so
+the base model is restored exactly. Programs may load an adapter in \texttt{setup} and remove it in \texttt{on\_end}.
+
 \subsection{Programs and library}
 Programs are deliberately \emph{open}: the agent can log anything and intervene with any inference-time method. A program
 file may define four optional functions, and the context exposes the whole model:
@@ -137,21 +164,44 @@ held-out initial states (20--49) are only used by \texttt{scripts/verify.py}, wh
 beats the frozen VLA there (one-sided Fisher exact test, 5\%).
 
 \subsection{Agent loop}
-\begin{enumerate}
-\item Pick a failing or unreliable task; run the frozen VLA with traces.
-\item Diagnose from behaviour and internals (where does the policy look, what does it commit to, where does it diverge
-from a trained-scene rollout).
-\item Propose interventions: build directions, choose sites, write a program with conditions; evaluate on development
-episodes; iterate within a budget.
-\item Verify the best program on held-out initial states; store it only if it beats the frozen VLA there.
-\item Reuse: on a new task, first try the library's entries (and compositions) before searching.
-\end{enumerate}
-Escalation order: logging only $\rightarrow$ activation and attention edits $\rightarrow$ action edits $\rightarrow$ short
-low-rank adapter runs (at most one at a time, minutes of GPU), with every entry recording its simulator cost so methods can be
-compared at equal budget. A verified program can later be \emph{compiled} into an adapter by distilling its behaviour.
+Two modes share the same tools and library.
+\paragraph{Research agent (main mode).} A Claude session runs unattended for hours (\texttt{prompts/explorer.md},
+\texttt{scripts/explore.py}). Its mission is to make the frozen VLA solve perturbed tasks by dissecting how the activations work,
+running causal experiments (patching, swapping, ablations, neuron pushes, toy probes with synthetic images or text-only prefixes,
+toy adapters), turning findings into programs, combining and stitching them, and keeping what works as code in
+\texttt{library/steerlib/} with its evidence. It keeps a lab notebook (\texttt{library/notes/JOURNAL.md}) from which a restarted
+session continues. Ideas are screened on 5--10 development episodes (initial states 0--19); a promising program is confirmed on 20
+and submitted; the driver verifies it on held-out initial states 20--49 against the frozen VLA (one-sided Fisher exact test, 5\%)
+and records the result in \texttt{library/INDEX.md}.
+
+\paragraph{ASPIRE-style round.} For one target task (\texttt{prompts/agent.md}): three candidate programs built from the library,
+up to six repairs from their traces, then a library update and held-out verification.
+
+\paragraph{Rules.} Development episodes only; no simulator ground truth inside programs and no benchmark task name; for
+paraphrased-instruction tasks, no use of the task's original wording (an instruction rewrite must be a general rule); frozen
+weights identical after every episode. Escalation is free: the agent decides when logging, activation and attention edits,
+neuron pushes, action edits or adapters are worth it, and every entry records its simulator cost so methods can be compared at
+equal budget. A verified program can later be \emph{compiled} into an adapter by distilling its behaviour.
 
 \section{First measurements}\label{sec:results}
 \input{results_baseline.tex}
+
+\paragraph{The policy is sensitive to wording and memorises positions.} On the trained suite the frozen policy reaches 0.84; with
+paraphrased instructions success ranges from 0.0 to 0.8 per task; with object positions swapped it is 0.0 on every task tried so
+far, i.e.\ the policy goes to the trained positions.
+
+\paragraph{Pilot: plain mean-difference steering has no effect.} The direction ``trained minus paraphrased'' (mean MLP output over
+all prefix tokens and chunks) added at VLM layers 3, 7, 11, 15 and expert layer 3 with strengths up to $4\sigma$ left success on
+\texttt{libero\_goal\_lan} task 7 at 0.00--0.05 (held-out states, 20 episodes per setting). The literature review gives the likely
+reasons: the direction is averaged over 128 image tokens that are identical in both conditions, the strength unit (spread of
+episode means) is tiny relative to per-token norms, and it is added to every token. Mechanism tests (direct steering of large random
+directions) confirm the hooks do change behaviour: pushes of 500 along a random direction break a task the policy normally solves.
+
+\paragraph{First finding of the research agent (preliminary).} The fine-tuned 16-layer VLM appears to have lost general English:
+paraphrase verbs it never saw in training (``switch'', ``slide'', sentence-initial ``place'') get representations near unrelated
+object nouns, so the action expert receives no usable verb. The agent built an instruction canonicaliser into the policy's
+training vocabulary (the target task's twin excluded, the base SmolVLM2 used as a meaning check). It has not been verified on
+held-out states yet.
 
 \section{Plan}
 \begin{enumerate}
@@ -179,11 +229,32 @@ this before any agent work. (ii) Gains on development initial states may be nois
 binomial confidence intervals guard against it. (iii) The perturbed suites may be failures of perception that no internal
 push can fix; language perturbations are the most likely to respond to steering, position swaps the least.
 
-\section{Related work (to be checked in detail)}
-Mechanistic steering of VLAs with fixed internal directions; synthesised steering objectives for frozen robot policies;
-learned latent steering triggered when failure is likely; libraries of task-specific adapters with dynamic routing;
-residual corrections trained in simulation for frozen VLAs; and code-as-policies systems with skill libraries (ASPIRE).
-The distinctive claim here is the automated synthesis, verification, composition and reuse of state- and
-internal-signal-dependent steering programs; a full literature check is needed before stating novelty.
+\section{Related work}
+A survey (\texttt{library/LITERATURE.md}) and an independent review against the sources (\texttt{library/LITERATURE\_REVIEW.md})
+seed the library; the points that matter most here:
+\begin{itemize}
+\item \textbf{VLA internals.} Clamping clusters of feed-forward neurons in OpenVLA and $\pi_0$ changes motion style (speed,
+height) but no task-success gains are reported (Häon et al., CoRL 2025). Optimal-transport maps on the second-to-last action-expert
+layer, tested on \texttt{smolvla\_libero}, control style reliably while mean-difference steering was inconsistent (DiMaS).
+Conceptor gates on action-expert residuals from about 15 success/failure rollouts per task raise success on LIBERO-10, measured on
+deliberately early, weak checkpoints (COAST). Activations injected into the action expert replay trajectories in absolute
+coordinates, while goal selection lives in the VLM: change \emph{where} through the prefix or the sampler and \emph{how} through
+the expert.
+\item \textbf{Sampler guidance.} Reward-gradient guidance of the flow velocity with particle resampling is the only method with
+LIBERO-PRO results ($\pi_{0.5}$ 23.7\% to 36.8\%, VLS); its keypoints come from segmentation and depth, so for us the reward must
+come from the camera images and proprioception. Action coherence guidance (identity attention in some action-expert self-attention
+layers, then extrapolation) has been shown on SmolVLA hardware; in our model the self-attention layers are expert layers
+$0,2,\dots,14$. Note LeRobot's convention: $x_t = t\,\epsilon + (1-t)\,a$ with $t$ from 1 (noise) to 0, so the clean estimate is
+$\hat a = x_t - t\,v_t$.
+\item \textbf{Gating and verification.} Steering only when a failure detector fires beats always-on steering ($\pi_{0.5}$ 42.7 vs
+33.8 with a learned latent policy, RL$^2$-VLA, which also needs a verifier for best-of-$N$).
+\item \textbf{Attention.} Re-weighting attention towards instruction tokens (IGAR, and PASTA for LLMs) improves language grounding
+at some cost in success under contradictory instructions.
+\item \textbf{LLM steering.} Contrastive activation addition, inference-time intervention (mass-mean shift), representation
+engineering, directional ablation and conceptors are the building blocks; benchmarks find prompting and low-rank representation
+fine-tuning stronger than mean-difference and SAE steering, and steering vectors fragile under rewording.
+\end{itemize}
+The distinctive claim here is the automated discovery, verification, composition and reuse of state- and internal-signal-dependent
+steering programs by a coding agent, with the frozen weights untouched; a full novelty check is still needed.
 
 \end{document}
