@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Run the research agent (prompts/explorer.md) unattended for some hours, and verify the programs it submits.
+
+  .venv/bin/python scripts/explore.py --hours 8
+
+The agent works in a tmux session (steer-explorer). When its session ends before the deadline it is restarted with a note to
+continue from library/notes/JOURNAL.md. Every minute the driver looks for library/programs/candidates/VERIFY_<suite>__<task>__*
+files and verifies each on held-out episodes (scripts/verify.py), which appends to library/INDEX.md. Log: outputs/explore.log.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parents[1]
+CAND = HERE / "library" / "programs" / "candidates"
+SESSION = "steer-explorer"
+LOG = HERE / "outputs" / "explore.log"
+
+
+def log(msg: str) -> None:
+    line = f"{time.strftime('%m-%d %H:%M:%S')} {msg}"
+    print(line, flush=True)
+    with LOG.open("a") as f:
+        f.write(line + "\n")
+
+
+def start(model: str, resume: bool) -> None:
+    prompt = HERE / "outputs" / "explorer_prompt.md"
+    text = (HERE / "prompts" / "explorer.md").read_text()
+    if resume:
+        text += ("\nRESUME: an earlier session of yours ended. Read library/notes/JOURNAL.md, library/INDEX.md and "
+                 "library/steerlib/README.md first and continue the most promising line of work.\n")
+    prompt.write_text(text)
+    subprocess.run(["tmux", "kill-session", "-t", SESSION], capture_output=True)
+    cmd = (f"unset ANTHROPIC_API_KEY; export MUJOCO_GL=egl PATH=$HOME/.local/bin:$PATH; "
+           f"claude --model {model} \"$(cat {prompt})\"; bash")
+    subprocess.run(["tmux", "new-session", "-d", "-s", SESSION, "-c", str(HERE), cmd], check=True)
+    log(f"explorer session started ({'resume' if resume else 'fresh'})")
+
+
+def alive() -> bool:
+    """True while claude runs inside the session (the trailing bash keeps the session itself open)."""
+    r = subprocess.run(["tmux", "list-panes", "-t", SESSION, "-F", "#{pane_current_command}"], capture_output=True, text=True)
+    return r.returncode == 0 and "bash" not in r.stdout.split()
+
+
+def verify_requests() -> None:
+    for req in sorted(CAND.glob("VERIFY_*")):
+        program = req.read_text().strip()
+        try:
+            suite, task, _ = req.name[len("VERIFY_"):].split("__", 2)
+        except ValueError:
+            log(f"bad request name {req.name}")
+            req.rename(req.with_name("BAD_" + req.name))
+            continue
+        log(f"verifying {program} on {suite} {task}")
+        r = subprocess.run([str(HERE / ".venv" / "bin" / "python"), "scripts/verify.py", "--program", program,
+                            "--suite", suite, "--task", task], cwd=HERE, capture_output=True, text=True)
+        log((r.stdout.strip().splitlines() or ["(no output)"])[-1] if r.returncode == 0 else f"verify failed: {r.stderr[-300:]}")
+        req.rename(req.with_name("DONE_" + req.name))
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--hours", type=float, default=8)
+    p.add_argument("--model", default="claude-opus-5-5")
+    p.add_argument("--max-restarts", type=int, default=5)
+    a = p.parse_args()
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    CAND.mkdir(parents=True, exist_ok=True)
+    (HERE / "library" / "notes").mkdir(parents=True, exist_ok=True)
+    deadline, restarts = time.time() + a.hours * 3600, 0
+    start(a.model, resume=(HERE / "library" / "notes" / "JOURNAL.md").exists())
+    while time.time() < deadline:
+        verify_requests()
+        if not alive():
+            if restarts >= a.max_restarts:
+                log("explorer ended too often; stopping")
+                break
+            restarts += 1
+            start(a.model, resume=True)
+        time.sleep(60)
+    subprocess.run(["tmux", "send-keys", "-t", SESSION, "Escape"], capture_output=True)
+    log("deadline reached; explorer stopped (session kept for inspection)")
+    verify_requests()
+
+
+if __name__ == "__main__":
+    main()

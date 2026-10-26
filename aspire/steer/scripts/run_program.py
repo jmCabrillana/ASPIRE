@@ -20,6 +20,7 @@ sys.path.insert(0, str(HERE))
 from scripts.record import episodes as parse_episodes  # noqa: E402
 from steer.hooks import Steering  # noqa: E402
 from steer.introspect import Introspect  # noqa: E402
+import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from steer.library import Context, load_direction, load_program, weights_fingerprint  # noqa: E402
@@ -28,7 +29,8 @@ from steer.rollout import Policy, load_task, make_env, run_episode  # noqa: E402
 DEV_MAX = 19
 
 
-def evaluate(policy, steering, intro, task, eps: list[int], module, trace: bool, out: Path | None) -> dict:
+def evaluate(policy, steering, intro, task, eps: list[int], module, trace: bool, out: Path | None,
+             save_obs: bool = False) -> dict:
     env = make_env(task)
     runs, before = [], weights_fingerprint(policy.policy)
     for e in eps:
@@ -41,13 +43,15 @@ def evaluate(policy, steering, intro, task, eps: list[int], module, trace: bool,
         on_step = (lambda t, obs, action: step(t, obs, action, ctx)) if step else None
         try:
             r = run_episode(env, policy, task, e, on_step=on_step, program=fn, steering=steering if fn else None,
-                            introspect=intro, trace=trace, ctx=ctx)
+                            introspect=intro, trace=trace, ctx=ctx, save_obs=save_obs)
             if end:
                 end(r, ctx)
         finally:
             ctx.close()
         if not torch.allclose(weights_fingerprint(policy.policy), before):
             raise SystemExit("the program left the VLA weights changed; undo in-place edits in on_end(result, ctx)")
+        if save_obs and out is not None:
+            np.savez_compressed(out / f"episode_{e}.npz", success=r["success"], instruction=ctx.instruction, **r.pop("obs"))
         if out is not None and trace:
             (out / f"episode_{e}.json").write_text(json.dumps(r, indent=1) + "\n")
         runs.append({k: v for k, v in r.items() if k != "trace"})
@@ -62,6 +66,7 @@ def main() -> None:
     p.add_argument("--task", type=int, required=True)
     p.add_argument("--episodes", default="0-19")
     p.add_argument("--trace", action="store_true")
+    p.add_argument("--save-obs", action="store_true", help="save every chunk's observation and every action (episode_<n>.npz)")
     p.add_argument("--heldout", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--n-action-steps", type=int, help="replan every n steps instead of 50")
     a = p.parse_args()
@@ -81,7 +86,7 @@ def main() -> None:
         for layer in range(data["unit"].shape[0]):
             dirs[f"{d}@{layer}"] = (data["where"], layer, data["unit"][layer])
     intro = Introspect(policy, directions=dirs)
-    res = evaluate(policy, steering, intro, load_task(a.suite, a.task), eps, module, a.trace, out)
+    res = evaluate(policy, steering, intro, load_task(a.suite, a.task), eps, module, a.trace, out, a.save_obs)
     res.update(program=name, suite=a.suite, task=a.task, n_action_steps=n_steps)
     (out / ("summary_heldout.json" if a.heldout else "summary.json")).write_text(json.dumps(res, indent=1) + "\n")
     print(f"{name} on {a.suite} {a.task}: success {res['success_rate']:.2f} over episodes {a.episodes}")

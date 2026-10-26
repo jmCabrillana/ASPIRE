@@ -91,15 +91,19 @@ class Policy:
         """True when the next act() computes a new action chunk (runs the VLM on the current observation)."""
         return len(self.policy._queues["action"]) == 0
 
-    @torch.no_grad()
-    def act(self, obs: dict, instruction: str) -> np.ndarray:
+    @staticmethod
+    def batch(obs: dict, instruction: str) -> dict:
+        """The raw lerobot batch for one observation (before the preprocessor)."""
         def img(key):
             a = np.ascontiguousarray(obs[key][::-1, ::-1])           # rotate 180 degrees
             return torch.from_numpy(a).permute(2, 0, 1).float().div(255).unsqueeze(0)
         state = np.concatenate([obs["robot0_eef_pos"], quat2axisangle(obs["robot0_eef_quat"]), obs["robot0_gripper_qpos"]])
-        batch = {"observation.images.image": img("agentview_image"), "observation.images.image2": img("robot0_eye_in_hand_image"),
-                 "observation.state": torch.from_numpy(state).float().unsqueeze(0), "task": [instruction]}
-        action = self.policy.select_action(self.pre(batch))
+        return {"observation.images.image": img("agentview_image"), "observation.images.image2": img("robot0_eye_in_hand_image"),
+                "observation.state": torch.from_numpy(state).float().unsqueeze(0), "task": [instruction]}
+
+    @torch.no_grad()
+    def act(self, obs: dict, instruction: str) -> np.ndarray:
+        action = self.policy.select_action(self.pre(self.batch(obs, instruction)))
         return self.post(action).squeeze(0).float().cpu().numpy()
 
 
@@ -110,7 +114,7 @@ def make_env(task: Task) -> OffScreenRenderEnv:
 
 
 def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: int, on_step=None, program=None,
-                steering=None, introspect=None, trace: bool = False, ctx=None) -> dict:
+                steering=None, introspect=None, trace: bool = False, ctx=None, save_obs: bool = False) -> dict:
     """One episode.
 
     program(t, obs, internals) -> list of steering terms (see steer.hooks.Steering.set), called before every new action chunk;
@@ -118,7 +122,10 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
     `steering`. on_step(t, obs, action) may return a replacement action (action-level programs).
     trace=True adds "trace": every chunk (time, steering terms, internals) and every 5th step (eef position, gripper, action).
     ctx (steer.library.Context): its instruction is what the VLA receives, ctx.t follows the step, ctx.logs go into the trace.
+    save_obs=True adds "obs": the raw observation at every chunk start and every executed action (for steer.lab and adapters).
     """
+    saved = {"t": [], "agentview_image": [], "robot0_eye_in_hand_image": [], "robot0_eef_pos": [], "robot0_eef_quat": [],
+             "robot0_gripper_qpos": [], "actions": []}
     chunks, steps_log, internals = [], [], None
     if introspect is not None:
         introspect.reset()
@@ -142,6 +149,10 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
             steering.set(terms)
         if due and introspect is not None:
             introspect.begin_chunk(steps)
+        if due and save_obs:
+            saved["t"].append(steps)
+            for k in ("agentview_image", "robot0_eye_in_hand_image", "robot0_eef_pos", "robot0_eef_quat", "robot0_gripper_qpos"):
+                saved[k].append(np.array(obs[k]))
         action = policy.act(obs, task.instruction if ctx is None else ctx.instruction)
         if due and introspect is not None:
             internals = introspect.end_chunk()
@@ -154,6 +165,8 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
         if on_step is not None:
             replaced = on_step(steps, obs, action)
             action = action if replaced is None else replaced
+        if save_obs:
+            saved["actions"].append(np.array(action, dtype=np.float32))
         obs, _, done, _ = env.step(action.tolist())
         if env.check_success():
             success = True
@@ -165,4 +178,6 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
     out = {"episode": episode, "success": success, "steps": steps, "seconds": round(time.time() - t0, 1)}
     if trace:
         out["trace"] = {"chunks": chunks, "steps": steps_log, "log": [] if ctx is None else ctx.logs}
+    if save_obs:
+        out["obs"] = {k: np.stack(v) for k, v in saved.items()}
     return out
