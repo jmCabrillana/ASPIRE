@@ -39,7 +39,7 @@ controlled simulator interventions and composes them for new tasks.
 | `scripts/record.py`, `scripts/make_direction.py`, `scripts/sweep.py`, `scripts/pilot.py` | record activations, build directions, fixed layer x strength sweeps |
 | `scripts/run_program.py`, `scripts/verify.py`, `scripts/agent_round.py` | evaluate a program on development states (0-19), verify on held-out states (20-49), one agent round |
 | `prompts/agent.md` | instructions of the steering agent |
-| `library/` | directions, programs (candidates and promoted), notes, `INDEX.md` (verified results) |
+| `library/` | `steerlib/` (reusable Python functions, indexed in its README), directions, programs (candidates and promoted), notes, `INDEX.md` (verified results) |
 | `doc/code_as_steering.tex` | idea, implementation and plan (`scripts/tables.py` then `tectonic`) |
 | `outputs/` | results (gitignored) |
 
@@ -49,7 +49,7 @@ Quick start:
 ./setup_env.sh
 .venv/bin/python scripts/baseline.py --suites libero_goal libero_goal_lan --episodes 10
 .venv/bin/python scripts/pilot.py --trained libero_goal --perturbed libero_goal_lan
-.venv/bin/python scripts/agent_round.py --suite libero_goal_lan --task 0 --budget 12
+.venv/bin/python scripts/agent_round.py --suite libero_goal_lan --task 7 --repairs 6
 ```
 
 Safety: generated code runs with full Python access, as in `aspire/sim`; same boundary (see the top-level `CLAUDE.md`).

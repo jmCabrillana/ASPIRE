@@ -124,6 +124,9 @@ def weights_fingerprint(module) -> torch.Tensor:
 
 
 def load_program(path: str | Path):
+    import sys
+    if str(ROOT) not in sys.path:                  # programs import steerlib
+        sys.path.insert(0, str(ROOT))
     path = Path(path)
     spec = importlib.util.spec_from_file_location(f"steer_program_{path.stem}", path)
     module = importlib.util.module_from_spec(spec)

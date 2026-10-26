@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """One agent round on a target task: a Claude session (tmux) searches for a steering program on development episodes, then
-the best program is verified on held-out episodes (scripts/verify.py).
+the best program is verified on held-out episodes (scripts/verify.py). Procedure (prompts/agent.md): 3 candidates, up to
+--repairs repairs from traces, then the agent moves what worked into library/steerlib/ (code), directions and notes.
 
-  .venv/bin/python scripts/agent_round.py --suite libero_goal_lan --task 4 --budget 12
+  .venv/bin/python scripts/agent_round.py --suite libero_goal_lan --task 4 --repairs 6
 """
 
 from __future__ import annotations
@@ -29,14 +30,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--suite", required=True)
     p.add_argument("--task", type=int, required=True)
-    p.add_argument("--budget", type=int, default=12)
+    p.add_argument("--repairs", type=int, default=6)
     p.add_argument("--hours", type=float, default=4)
     a = p.parse_args()
     task = load_task(a.suite, a.task)
     trained = trained_suite(a.suite)
     hint = f"the same task id in {trained}" if trained else "none"
     text = (HERE / "prompts" / "agent.md").read_text()
-    for k, v in {"SUITE": a.suite, "TASK": str(a.task), "INSTRUCTION": task.instruction, "BUDGET": str(a.budget),
+    for k, v in {"SUITE": a.suite, "TASK": str(a.task), "INSTRUCTION": task.instruction, "REPAIRS": str(a.repairs),
                  "TRAINED_HINT": hint}.items():
         text = text.replace("{{" + k + "}}", v)
     cand = HERE / "library" / "programs" / "candidates"
