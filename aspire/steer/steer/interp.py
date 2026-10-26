@@ -37,11 +37,10 @@ def neuron_acts(lab: Lab, obs: dict, instruction: str, where: str, which: list[i
 
 
 def segments(x: torch.Tensor) -> dict[str, torch.Tensor]:
-    out, start = {}, 0
-    for name, n in PREFIX:
-        out[name] = x[start:start + n].mean(0)
-        start += n
-    return out
+    """Mean per prefix segment. The instruction length varies (padding is dropped), so it is whatever lies between the 128
+    image tokens and the final state token."""
+    n_img = PREFIX[0][1]
+    return {"image": x[:n_img].mean(0), "image2": x[n_img:2 * n_img].mean(0), "lang": x[2 * n_img:-1].mean(0), "state": x[-1]}
 
 
 @dataclass

@@ -57,7 +57,12 @@ class Lab:
 
     @staticmethod
     def span(segment: str) -> slice:
-        """Token positions of a prefix segment (image, image2, lang, state) in VLM-layer activations."""
+        """Token positions of a prefix segment (image, image2, lang, state) in VLM-layer activations. The instruction length
+        varies with the instruction: use slice(128, -1) for "lang" and -1 for "state" on a captured tensor."""
+        if segment == "lang":
+            return slice(128, -1)
+        if segment == "state":
+            return slice(-1, None)
         start = 0
         for name, n in PREFIX:
             if name == segment:
