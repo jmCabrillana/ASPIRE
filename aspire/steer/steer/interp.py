@@ -153,3 +153,47 @@ def _tokenizer():
         from transformers import AutoTokenizer
         _TOK["t"] = AutoTokenizer.from_pretrained("HuggingFaceTB/SmolVLM2-500M-Video-Instruct")
     return _TOK["t"]
+
+
+# ---- groups and interactions -------------------------------------------------------------------------------------------
+
+def clusters(bank: Bank, key: str, n_groups: int = 32, min_std: float = 1e-3) -> dict[int, list[int]]:
+    """Groups of neurons that co-activate across the bank's chunks (k-means on standardised activation profiles).
+    Returns {group: [neurons]}; neurons that never vary are left out."""
+    from sklearn.cluster import KMeans
+    x = bank.acts[bank._key(key)]
+    keep = np.where(x.std(0) > min_std)[0]
+    z = (x[:, keep] - x[:, keep].mean(0)) / x[:, keep].std(0)
+    lab_ = KMeans(n_clusters=min(n_groups, len(keep)), n_init=4, random_state=0).fit_predict(z.T)
+    groups: dict[int, list[int]] = {}
+    for n, g in zip(keep, lab_):
+        groups.setdefault(int(g), []).append(int(n))
+    return groups
+
+
+def interaction(lab: Lab, obs: dict, instruction: str, push_a: list, push_b: list, metric) -> dict:
+    """Effect of two neuron pushes (lists for Neurons.push) alone and together on metric(chunk_with, chunk_without), and the
+    synergy effect(A+B) - effect(A) - effect(B). Non-zero synergy means the groups interact (gate, cancel or reinforce)."""
+    from steer.lab import Neurons
+    nr = Neurons(lab)
+    base = lab.chunk(obs, instruction)
+
+    def run(pushes):
+        with nr.push(pushes):
+            return metric(lab.chunk(obs, instruction), base)
+
+    ea, eb, eab = run(push_a), run(push_b), run(push_a + push_b)
+    return {"A": ea, "B": eb, "A+B": eab, "synergy": eab - ea - eb}
+
+
+def downstream(policy, where: str, layer: int, neuron: int, to_layer: int, top: int = 20):
+    """Direct (virtual-weight) connections from a neuron to the neurons of a later layer through the residual stream:
+    W_down[l][:, n] projected on the gate and up rows of layer `to_layer` (ignores the norms in between).
+    Returns [(neuron, gate weight, up weight)], strongest |gate| first. Edit a connection with ctx.edit_weights on those rows."""
+    from steer.hooks import layers
+    w_out = layers(policy, where)[layer].mlp.down_proj.weight[:, neuron].float()
+    mlp = layers(policy, where)[to_layer].mlp
+    g = (mlp.gate_proj.weight.float() @ w_out).detach().cpu()
+    u = (mlp.up_proj.weight.float() @ w_out).detach().cpu()
+    idx = torch.argsort(-g.abs())[:top]
+    return [(int(m), round(float(g[m]), 4), round(float(u[m]), 4)) for m in idx]

@@ -35,6 +35,10 @@ library/programs/examples/open_example.py):
   instruction word). Use them the traditional way: find which neurons respond to which observation, action or word, probe what
   each layer encodes (target object, position, phase, verb), then edit the model (pushes, ablations, weight edits) based on that.
   Add your own labels (e.g. target object, instruction verb) and banks over trained tasks.
+- Neuron groups and interactions (steer/interp.py): clusters (co-activating neuron groups), interaction (effect of two pushes alone
+  and together, synergy = gating / cancelling / reinforcing), downstream (virtual-weight connections from a neuron to the neurons of
+  a later layer through the residual stream; edit them with ctx.edit_weights). Groups and circuits may matter more than single
+  neurons here; edit them when that makes sense.
 - Steering hooks (steer/hooks.py Steering), introspection (attention shares of the action tokens per segment, MLP norms,
   projections), and you can patch anything (attention function, embeddings, instruction tokens) from a program via ctx.patch.
 - LoRA (steer/lora.py): attach / train / save / load / detach small adapters on development episodes (40 steps take ~3 s);
