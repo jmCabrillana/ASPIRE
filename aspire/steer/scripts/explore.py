@@ -37,6 +37,9 @@ def log(msg: str) -> None:
 def start(model: str, resume: bool) -> None:
     prompt = HERE / "outputs" / "explorer_prompt.md"
     text = (HERE / "prompts" / "explorer.md").read_text()
+    extra = HERE / "prompts" / "explorer_extra.md"          # per-run additions (e.g. the targets of a comparison arm)
+    if extra.exists():
+        text += "\n" + extra.read_text()
     if resume:
         text += ("\nRESUME: an earlier session of yours ended. Read library/notes/JOURNAL.md, library/INDEX.md and "
                  "library/steerlib/README.md first and continue the most promising line of work.\n")
@@ -77,7 +80,9 @@ def main() -> None:
     p.add_argument("--hours", type=float, default=8)
     p.add_argument("--model", default="claude-opus-5-5")
     p.add_argument("--max-restarts", type=int, default=5)
+    p.add_argument("--session", default=SESSION, help="tmux session name (one per concurrent explorer)")
     a = p.parse_args()
+    globals()["SESSION"] = a.session
     os.environ.pop("ANTHROPIC_API_KEY", None)
     CAND.mkdir(parents=True, exist_ok=True)
     (HERE / "library" / "notes").mkdir(parents=True, exist_ok=True)

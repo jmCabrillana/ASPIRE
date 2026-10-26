@@ -11,7 +11,8 @@ we expect you to find techniques that are not in it.
 
 TARGETS (frozen success, 10 episodes, outputs/baseline/): start with paraphrased-instruction tasks, libero_goal_lan task 7
 (0.0), task 3 (0.0), task 0 (0.2), then any *_lan or *_swap task in outputs/baseline/ with low success (the swap suites are at
-0.0 everywhere: the policy goes to the trained positions). Reuse across targets is the point: when you move to a new target,
+0.0 everywhere: the policy goes to the trained positions). RESERVED (do not touch, not even to record or look at: kept unseen for a later library-transfer comparison): every task of
+libero_object_lan and libero_object_swap. Reuse across targets is the point: when you move to a new target,
 first try what the library already has.
 
 TOOLS (read the code first: steer/rollout.py, hooks.py, introspect.py, library.py, lab.py, lora.py; example program
