@@ -32,15 +32,28 @@ reusable code, and reuse them on new tasks, getting close to what one-shot fine-
    The driver verifies on held-out initial states 20-49 against the frozen VLA (one-sided Fisher test) and records the result in
    `library/INDEX.md`. A shorter ASPIRE-style round (`prompts/agent.md`: 3 candidates, repairs from traces, library update) also exists.
 
-## Status (2026-10-26)
+## Status (2026-10-27)
 
-- Frozen baseline (10 episodes per task): `libero_goal` 0.84 mean; `libero_goal_lan` (paraphrased instructions) 0.0-0.8 per
-  task; every `_swap` task tried so far (object positions swapped) 0.0. Table in the design document.
-- A first fixed steering sweep (trained-minus-paraphrased mean MLP output, VLM and expert layers) had no effect; the literature
-  review explains why (direction averaged over identical image tokens, strength tiny relative to per-token norms).
-- The research agent is running (`scripts/explore.py`, 8 hours). Its first finding: the fine-tuned 16-layer VLM has lost general
-  English, so paraphrase verbs it never saw land near unrelated nouns; it built `steerlib/canon.py`, which rewrites an instruction
-  into the policy's training vocabulary (target task's twin excluded) with the base SmolVLM2 as a meaning check. Not verified yet.
+First research session (agent, 8 h, one GPU): **21 tasks promoted** on held-out initial states (20-49, 30 episodes, Fisher test;
+`library/INDEX.md`, table and details in the design document):
+- **Paraphrased instructions, 15 tasks:** `goal_lan` 0, 6, 7, 8, 9 and `spatial_lan` 1-9 (e.g. goal_lan 7: 1/30 -> 29/30;
+  spatial_lan 1-9 mostly 0/30 -> 19-27/30).
+- **Swapped positions, 6 tasks** (frozen 0/30 everywhere): `spatial_swap` 0, 2, 4, 5, 7, 9 (8-20/30). `goal_swap` still unsolved.
+- **In-network steering, text unchanged:** a closed-form rank-one edit of VLM layer 1 teaches "switch" = "turn", fitted live on one
+  observation (goal_lan 7: 1 -> 29/30; goal_lan 9: 15 -> 26/30); a "place" = "put" fact learned on one sentence transfers to others
+  (goal_lan 8: 0 -> 25/30).
+- **Mechanisms** (`library/knowledge/network_map.md`): paraphrase failures are lexical (unknown verbs look like object nouns); the
+  action expert reads the instruction as (token, position) pairs through its cross-attention layers, the verb only in its own
+  token; targets are memorised per instruction (images steer how, not where); destinations interpolate smoothly along the
+  destination noun's representation; one action-expert neuron (layer 4, #1855) controls gripper timing.
+- **Learning:** one self-generated success trains an adapter that teaches a paraphrase (0/10 -> 3/5), but adapters did not transfer
+  across tasks and 7 hybrid successes were not enough for a swapped layout.
+- Caveats: the swap wins are hybrids (the program carries the object to the image-tracked destination and hands back to the VLA);
+  some rewrites coincide with the target's trained wording through other sentences; the agentview camera model is used as a
+  calibration constant (pending review).
+
+Next: library-transfer comparison on the unseen `libero_10_lan` (seed vs grown library, same agent and budget), then an
+equal-budget LoRA baseline for sample efficiency.
 
 ## Layout
 
@@ -60,7 +73,8 @@ reusable code, and reuse them on new tasks, getting close to what one-shot fine-
 | `scripts/verify.py` | held-out verification (episodes 20-49), Fisher test, promotion into the library |
 | `scripts/explore.py` | runs the research agent unattended and verifies what it submits |
 | `scripts/agent_round.py` | one ASPIRE-style round on one task |
-| `scripts/tables.py` | LaTeX tables for the design document |
+| `scripts/tables.py` | LaTeX tables for the design document (baseline, sweeps, verified results) |
+| `scripts/compare_library.py` | library-transfer comparison: seed vs grown library on unseen tasks, isolated arm copies |
 | `prompts/explorer.md`, `prompts/agent.md` | agent instructions |
 | `library/` | `steerlib/` (code + README index), `directions/`, `adapters/`, `programs/`, `tools/`, `notes/` (JOURNAL.md), `INDEX.md`, `LITERATURE.md`, `LITERATURE_REVIEW.md` |
 | `doc/` | design document |

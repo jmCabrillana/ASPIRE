@@ -206,26 +206,93 @@ reasons: the direction is averaged over 128 image tokens that are identical in b
 episode means) is tiny relative to per-token norms, and it is added to every token. Mechanism tests (direct steering of large random
 directions) confirm the hooks do change behaviour: pushes of 500 along a random direction break a task the policy normally solves.
 
-\paragraph{First finding of the research agent (preliminary).} The fine-tuned 16-layer VLM appears to have lost general English:
-paraphrase verbs it never saw in training (``switch'', ``slide'', sentence-initial ``place'') get representations near unrelated
-object nouns, so the action expert receives no usable verb. The agent built an instruction canonicaliser into the policy's
-training vocabulary (the target task's twin excluded, the base SmolVLM2 used as a meaning check). It has not been verified on
-held-out states yet.
+\section{Results of the first research session}\label{sec:session1}
+One unattended session of the research agent (2026-10-26, 16:40--00:40, Claude Opus, one GPU) on the paraphrased and swapped
+goal and spatial suites. Every claim below is either a held-out verification (driver, initial states 20--49) or an experiment
+recorded in the agent's notebook (\texttt{library/notes/JOURNAL.md}, experiment numbers E$n$) and summarised in
+\texttt{library/knowledge/network\_map.md}.
+
+\input{results_verified.tex}
+
+\paragraph{Verified gains.} 21 tasks were promoted: 15 paraphrased-instruction tasks (\texttt{goal\_lan} 0, 6, 7, 8, 9;
+\texttt{spatial\_lan} 1--9) and, for the first time, 6 swapped-position tasks (\texttt{spatial\_swap} 0, 2, 4, 5, 7, 9), where the
+frozen policy scores 0/30 everywhere. \texttt{goal\_swap} is still essentially unsolved (4/30 on task 9, not significant), and
+\texttt{goal\_lan} 3 and 5 are unsolved (they need a word or a two-step skill that only the target task's own training taught).
+
+\paragraph{Three kinds of programs.}
+\begin{itemize}
+\item \textbf{Text rewrite} (\texttt{steerlib/canon.py}): a noisy-channel translation of the instruction into the policy's training
+vocabulary, with the base SmolVLM2 (and Llama-2-7B) as a meaning check and the target task's twin excluded from all statistics. On
+eight fresh paraphrases written before any result it raised mean success from 0.25 to 0.73.
+\item \textbf{In-network edits, text unchanged} (\texttt{steer/edit.py}): a closed-form rank-one edit of the VLM layer-1 down
+projection that makes the layer write the value of a known verb for an unknown one (``switch'' $\to$ ``turn''), fitted live on the
+episode's first observation: \texttt{goal\_lan} 7 from 1/30 to 29/30 and \texttt{goal\_lan} 9 from 15/30 to 26/30, equal to the text
+rewrite. A ``place $\to$ put'' fact learned on one sentence transfers to other sentences and tasks (\texttt{goal\_lan} 8 from 0/30 to
+25/30, with the deletion of out-of-vocabulary words through the padding mask).
+\item \textbf{Hybrid hand-back} for swapped layouts: the VLA grasps; the program carries the object above the destination tracked
+in the image with the policy's own SigLIP patch features (voting over reference frames), then hands control back with a
+virtual-frame state so the VLA's own final alignment and release run; a nudge-and-retry search when it hovers. This is closer to
+code-as-policies than to steering, and is reported as such.
+\end{itemize}
+
+\paragraph{What the network does (mechanistic findings).}
+\begin{itemize}
+\item \textbf{Paraphrase failures are lexical.} Unknown verbs are represented like object nouns (``switch'' near ``compartment'',
+``drawer'') and the possessive like the end of the instruction; known words stay at cosine 0.93--1.00 with their trained context at
+every layer. Fine-tuning removed general English from the 16-layer VLM (E02).
+\item \textbf{How the action expert reads the instruction:} as (token keys and values, rotary position) pairs through its
+cross-attention (odd) layers; the verb lives in its own token's KV at every VLM layer, there is no summary token. Patching only the
+verb's residual restores 96\% of a rewrite's effect after layer 0, 50\% after layer 8 and none after layer 15 (E15, E22, E23).
+\item \textbf{Hence where to edit:} the layer-1 down projection, where a closed-form edit fitted on two observations reaches the
+patching bound on new observations (E16). Edits can substitute a word's meaning but cannot insert or reorder words; structural
+paraphrases still need the text rewrite.
+\item \textbf{Word identity is dense} (more than 256 neurons to reconstruct one correction, E19), and function words matter as much
+as verbs: wordings are memorised as exact patterns (E25).
+\item \textbf{Targets are memorised per instruction.} The images steer \emph{how} to move (blinding the wrist camera changes the path
+tenfold) but not \emph{where}; probe directions, state shifts and attention boosts towards the images do not move the target (E06,
+E10--E12, E17). In goal scenes the destination is a smooth function of the destination noun's representation: interpolating
+``plate'' towards ``stove'' at that token moves the endpoint along the line between them (E20); in spatial scenes it is hard-wired
+(E21).
+\item \textbf{A single action-expert neuron controls gripper timing} (expert layer 4, neuron 1855): dose $-1$ keeps the gripper open,
+$+2$ closes it at once, $+1$ does nothing (threshold behaviour, E28).
+\end{itemize}
+
+\paragraph{Learning and sample efficiency.}
+\begin{center}\small
+\begin{tabular}{p{3.6cm}p{3.6cm}p{3.6cm}p{3.6cm}}
+\toprule
+component & learns & data & result \\
+\midrule
+text rewrite & translation into the training vocabulary & none (a language model and the other trained instructions) & 9 spatial and 3 goal tasks promoted \\
+stored lexical fact & unknown word = known word at VLM layer 1 & one sentence pair, two observations & transfers to other sentences and tasks \\
+live lexical edit & the same, fitted at run time & the episode's first observation & \texttt{goal\_lan} 7: 29/30, 9: 26/30 \\
+LoRA from own success & paraphrase $\to$ behaviour & one self-generated success, about 15\,s of training & \texttt{spatial\_lan} 1: 3/5 (frozen 0/10); no transfer across tasks \\
+LoRA for a swapped layout & new layout & seven self-generated hybrid successes & the VLA alone 1/10 (program 8/15): not enough \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Caveats.} (i) Several rewrites coincide with the original trained wording of the target (``turn on the stove''); every
+word comes from the paraphrase or from \emph{other} trained sentences, but this makes the language results easier than they look.
+(ii) Two choices are pending review: the fixed agentview camera model from the LIBERO scene definition is used as a sensor
+calibration constant (no object poses), and trained-suite recordings of the same task serve as references for swapped layouts.
+(iii) Before \texttt{libero\_object\_lan} was reserved, the agent had seen its instructions; the transfer comparison was moved to
+the untouched \texttt{libero\_10\_lan}. (iv) One session, one checkpoint; development episodes were screened many times, which is why
+only the held-out numbers are claimed.
 
 \section{Plan}
 \begin{enumerate}
-\item \textbf{Baseline} (done for the suites above): frozen SmolVLA per task, 10 episodes.
-\item \textbf{Steering works at all}: record mixed-outcome and trained/perturbed pairs, build success and shift directions,
-sweep layer $\times$ strength on held-out initial states. Success criterion: an intervention that raises success on held-out
-states of a task where the frozen policy fails, by more than the binomial noise (with 30 episodes, a rise from 0.2 to 0.5 is
-significant at the 5\% level).
-\item \textbf{State-dependent steering}: the same directions gated by phase (before/after grasp) and by internal signals.
-\item \textbf{Agent-written programs}: the coding agent runs the loop above on LIBERO-PRO perturbed tasks; library
-entries verified on held-out states.
-\item \textbf{Transfer}: entries discovered on some perturbed tasks evaluated on other perturbed tasks and suites, without
-search; compare with search from scratch at equal simulator budget.
-\item \textbf{Parameter level}: short low-rank adapter runs on self-generated successful rollouts, and compilation of
-verified programs into adapters.
+\item \textbf{Done:} baseline; tools (lab, neurons, interpretability, edits, adapters, open programs); first research session
+(Section~\ref{sec:session1}).
+\item \textbf{Library transfer} (running next): the same agent and budget (2\,h) on two unseen \texttt{libero\_10\_lan} tasks, once
+with the seed library and once with the grown library; repeat on more unseen tasks if the signal is clear.
+\item \textbf{Equal-budget learning baseline}: plain LoRA fine-tuning with the same number of simulator episodes and successes that a
+library fix consumed, to measure sample efficiency against standard training.
+\item \textbf{In-network structural fixes}: insert tokens into padding slots with assigned rotary positions (the expert reads
+(token, position) pairs), so insertions and reorderings can be fixed inside the network, not only substitutions.
+\item \textbf{Swapped layouts}: perception (re-tracking, every object's template), wrist-camera alignment before the hand-back,
+internal levers for the target (the destination-noun interpolation found in goal scenes), and adapters with more data.
+\item \textbf{Compilation}: distil verified programs and edits into adapters, and retrieve adapters by activation (adapter bank).
 \end{enumerate}
 
 \paragraph{Baselines and ablations.} Frozen VLA; fixed steering (no state dependence); state-dependent steering without

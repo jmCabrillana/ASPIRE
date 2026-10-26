@@ -62,8 +62,42 @@ def sweeps() -> str:
     return "\n\n".join(parts) + "\n" if parts else "No steering sweep yet.\n"
 
 
+KIND = {"canon": "text rewrite", "lexedit": "in-network edit (live)", "lexfacts": "in-network edit (stored fact)",
+        "carry_handback": "hybrid hand-back", "approach_handback": "hybrid hand-back"}
+
+
+def verified() -> str:
+    """The held-out verifications of library/INDEX.md: best program per task."""
+    index = HERE / "library" / "INDEX.md"
+    if not index.exists():
+        return ""
+    best = {}
+    for line in index.read_text().splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 6 or not cells[2][:1].isdigit():
+            continue
+        program, task, frozen, prog, pval, verdict = cells[:6]
+        k = int(prog.split("/")[0])
+        better = task not in best or k > best[task][2] or (k == best[task][2] and program.startswith("lex"))   # ties: in-network
+        if better:
+            best[task] = (program, frozen, k, prog, pval, verdict)
+    rows = sorted(best.items(), key=lambda kv: (kv[0].split()[0], int(kv[0].split()[1])))
+    lines = [r"\begin{table}[h]\centering\small", r"\begin{tabular}{llllll}", r"\toprule",
+             r"task & program & kind & frozen & program & $p$ \\", r"\midrule"]
+    for task, (program, frozen, _, prog, pval, verdict) in rows:
+        kind = next((v for k, v in KIND.items() if program.startswith(k)), "")
+        mark = "" if verdict == "PROMOTED" else " (n.s.)"
+        lines.append(f"\\texttt{{{tex(task)}}} & \\texttt{{{tex(program)}}} & {kind} & {frozen} & {prog}{mark} & {pval} \\\\")
+    n = sum(v[5] == "PROMOTED" for v in best.values())
+    lines += [r"\bottomrule", r"\end{tabular}",
+              f"\\caption{{Held-out verification (initial states 20--49, 30 episodes): best program per task against the frozen "
+              f"policy on the same states, one-sided Fisher exact test. {n} of {len(best)} tasks promoted.}}", r"\end{table}"]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
     (DOC / "results_baseline.tex").write_text(baseline() + "\n" + sweeps())
+    (DOC / "results_verified.tex").write_text(verified())
     print("wrote", DOC / "results_baseline.tex")
 
 

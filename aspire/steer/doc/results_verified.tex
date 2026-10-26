@@ -1,0 +1,33 @@
+\begin{table}[h]\centering\small
+\begin{tabular}{llllll}
+\toprule
+task & program & kind & frozen & program & $p$ \\
+\midrule
+\texttt{libero\_goal\_lan 0} & \texttt{canon\_v5} & text rewrite & 11/30 & 26/30 & 0.000 \\
+\texttt{libero\_goal\_lan 1} & \texttt{lexfacts} & in-network edit (stored fact) & 27/30 & 30/30 (n.s.) & 0.119 \\
+\texttt{libero\_goal\_lan 2} & \texttt{lexfacts} & in-network edit (stored fact) & 22/30 & 26/30 (n.s.) & 0.167 \\
+\texttt{libero\_goal\_lan 6} & \texttt{canon\_v5} & text rewrite & 6/30 & 18/30 & 0.002 \\
+\texttt{libero\_goal\_lan 7} & \texttt{lexedit\_live} & in-network edit (live) & 1/30 & 29/30 & 0.000 \\
+\texttt{libero\_goal\_lan 8} & \texttt{lexfacts\_mask} & in-network edit (stored fact) & 0/30 & 25/30 & 0.000 \\
+\texttt{libero\_goal\_lan 9} & \texttt{lexedit\_live} & in-network edit (live) & 15/30 & 26/30 & 0.002 \\
+\texttt{libero\_goal\_swap 9} & \texttt{approach\_handback} & hybrid hand-back & 0/30 & 4/30 (n.s.) & 0.056 \\
+\texttt{libero\_spatial\_lan 0} & \texttt{canon\_v7} & text rewrite & 10/30 & 15/30 (n.s.) & 0.147 \\
+\texttt{libero\_spatial\_lan 1} & \texttt{canon\_v6} & text rewrite & 0/30 & 22/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 2} & \texttt{canon\_v7} & text rewrite & 3/30 & 10/30 & 0.029 \\
+\texttt{libero\_spatial\_lan 3} & \texttt{canon\_v7} & text rewrite & 1/30 & 24/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 4} & \texttt{canon\_v13} & text rewrite & 0/30 & 21/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 5} & \texttt{canon\_v6} & text rewrite & 0/30 & 24/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 6} & \texttt{canon\_v6} & text rewrite & 0/30 & 27/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 7} & \texttt{canon\_v12} & text rewrite & 0/30 & 24/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 8} & \texttt{canon\_v13} & text rewrite & 0/30 & 19/30 & 0.000 \\
+\texttt{libero\_spatial\_lan 9} & \texttt{canon\_v12} & text rewrite & 0/30 & 20/30 & 0.000 \\
+\texttt{libero\_spatial\_swap 0} & \texttt{carry\_handback4} & hybrid hand-back & 0/30 & 8/30 & 0.002 \\
+\texttt{libero\_spatial\_swap 2} & \texttt{carry\_handback2} & hybrid hand-back & 0/30 & 20/30 & 0.000 \\
+\texttt{libero\_spatial\_swap 4} & \texttt{carry\_handback2} & hybrid hand-back & 0/30 & 11/30 & 0.000 \\
+\texttt{libero\_spatial\_swap 5} & \texttt{carry\_handback2} & hybrid hand-back & 0/30 & 8/30 & 0.002 \\
+\texttt{libero\_spatial\_swap 7} & \texttt{carry\_handback4} & hybrid hand-back & 0/30 & 18/30 & 0.000 \\
+\texttt{libero\_spatial\_swap 9} & \texttt{carry\_handback4} & hybrid hand-back & 0/30 & 17/30 & 0.000 \\
+\bottomrule
+\end{tabular}
+\caption{Held-out verification (initial states 20--49, 30 episodes): best program per task against the frozen policy on the same states, one-sided Fisher exact test. 20 of 24 tasks promoted.}
+\end{table}
