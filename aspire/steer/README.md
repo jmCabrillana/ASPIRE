@@ -30,9 +30,26 @@ controlled simulator interventions and composes them for new tasks.
 
 | path | what |
 |---|---|
-| `setup_env.sh` | creates `.venv` (lerobot + SmolVLA + LIBERO-PRO from `../sim/cap/third_party`) |
-| `steer/` | Python package: rollout loop, hooks, steering API |
-| `scripts/` | experiments (baseline, sweeps) |
+| `setup_env.sh` | creates `.venv`: a copy of `../sim/.venv-libero` (torch cu128, LIBERO-PRO, robosuite) plus `lerobot[smolvla]` |
+| `steer/rollout.py` | episode loop identical to lerobot's LIBERO eval; steering programs and traces plug in here |
+| `steer/hooks.py` | activation steering (MLP-output hooks, VLM and action-expert layers) and recording |
+| `steer/introspect.py` | per-chunk internals: attention shares of the action tokens per segment, MLP norms, projections |
+| `steer/directions.py`, `steer/library.py` | contrast directions; the library (directions, programs, context API) |
+| `scripts/baseline.py` | frozen success rate per task |
+| `scripts/record.py`, `scripts/make_direction.py`, `scripts/sweep.py`, `scripts/pilot.py` | record activations, build directions, fixed layer x strength sweeps |
+| `scripts/run_program.py`, `scripts/verify.py`, `scripts/agent_round.py` | evaluate a program on development states (0-19), verify on held-out states (20-49), one agent round |
+| `prompts/agent.md` | instructions of the steering agent |
+| `library/` | directions, programs (candidates and promoted), notes, `INDEX.md` (verified results) |
+| `doc/code_as_steering.tex` | idea, implementation and plan (`scripts/tables.py` then `tectonic`) |
 | `outputs/` | results (gitignored) |
+
+Quick start:
+
+```bash
+./setup_env.sh
+.venv/bin/python scripts/baseline.py --suites libero_goal libero_goal_lan --episodes 10
+.venv/bin/python scripts/pilot.py --trained libero_goal --perturbed libero_goal_lan
+.venv/bin/python scripts/agent_round.py --suite libero_goal_lan --task 0 --budget 12
+```
 
 Safety: generated code runs with full Python access, as in `aspire/sim`; same boundary (see the top-level `CLAUDE.md`).

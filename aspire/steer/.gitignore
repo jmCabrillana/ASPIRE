@@ -1,3 +1,7 @@
 outputs/
 *.log
 __pycache__/
+doc/*.aux
+doc/*.log
+doc/*.fdb_latexmk
+doc/*.fls
