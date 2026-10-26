@@ -38,13 +38,16 @@ class Context:
     ctx.vla          the SmolVLAPolicy (torch module): ctx.vla.model.vlm_with_expert, its config, ...
     ctx.vlm_layers   the 16 VLM text layers; ctx.expert_layers: the 16 action-expert layers
     ctx.hook(module, fn, pre=False, kwargs=False)   register a forward (or forward-pre) hook, removed after the episode
-    ctx.patch(obj, name, value)                     replace an attribute (e.g. a method) for the episode, restored after it
+    ctx.patch(obj, name, value)                     replace an attribute for the episode, restored after it: a method (e.g. a
+                                                    rewritten forward or attention function), a whole module, a config value
+    ctx.edit_weights(tensor, fn)                    edit weights in place for the episode: tensor <- fn(tensor); restored after it
     ctx.steering     additive steering (steer.hooks.Steering); ctx.push(name, layer, sigmas) builds a term from a direction
     ctx.introspect   the per-chunk internals collector (steer.introspect.Introspect)
     ctx.instruction  the instruction given to the VLA; a program may rewrite it
     ctx.log(key, value)   anything JSON-serialisable (tensors are converted); stored in the episode trace
     ctx.memory       a dict kept for the episode;  ctx.task: suite, task_id, instruction (no benchmark task name)
-    The weights must be the same after the episode as before (checked); temporary in-place edits must be undone in on_end.
+    Anything may be changed during the episode (weights, model code, inputs, outputs); everything is restored afterwards, and the
+    evaluator checks the weights are back to the frozen ones (edits made outside edit_weights must be undone in on_end).
     """
 
     def __init__(self, task, policy=None, steering=None, introspect=None):
@@ -56,7 +59,7 @@ class Context:
         self.vla = policy.policy if policy is not None else None
         self.instruction = task.instruction
         self.logs: list[dict] = []
-        self._handles, self._patches = [], []
+        self._handles, self._patches, self._weights = [], [], []
         self.t = 0
 
     @property
@@ -77,6 +80,12 @@ class Context:
         self._patches.append((obj, name, obj.__dict__.get(name, _MISSING)))
         setattr(obj, name, value)
 
+    @torch.no_grad()
+    def edit_weights(self, tensor: torch.Tensor, fn) -> None:
+        """In-place weight edit for this episode (e.g. scale a neuron's row, add a rank-one update, zero a head)."""
+        self._weights.append((tensor, tensor.detach().clone()))
+        tensor.copy_(fn(tensor.detach().clone()))
+
     def log(self, key: str, value) -> None:
         self.logs.append({"t": self.t, "key": key, "value": _jsonable(value)})
 
@@ -91,6 +100,10 @@ class Context:
         return where, layer, unit, sigmas * spread
 
     def close(self) -> None:
+        with torch.no_grad():
+            for tensor, saved in reversed(self._weights):
+                tensor.copy_(saved)
+        self._weights = []
         for h in self._handles:
             h.remove()
         for obj, name, old in reversed(self._patches):

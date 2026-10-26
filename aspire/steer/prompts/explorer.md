@@ -33,17 +33,26 @@ library/programs/examples/open_example.py):
 - LoRA (steer/lora.py): attach / train / save / load / detach small adapters on development episodes (40 steps take ~3 s);
   base weights are restored exactly. Use it as one tool among others (e.g. distil a steering program into an adapter, or
   combine an adapter with steering), not as the only answer.
-- Programs (steer/library.py): setup(ctx), program(t, obs, internals, ctx), on_step(t, obs, action, ctx), on_end(result, ctx);
-  ctx.vla, ctx.vlm_layers, ctx.expert_layers, ctx.hook, ctx.patch, ctx.instruction, ctx.steering, ctx.memory, ctx.log.
+- Programs (steer/library.py) are fully OPEN-ENDED: setup(ctx), program(t, obs, internals, ctx), on_step(t, obs, action, ctx),
+  on_end(result, ctx). A program may log anything (about the task, the observations, its own code and decisions, any tensor of the
+  VLA) with ctx.log, and change anything during the episode: hooks on any module (ctx.hook), rewritten model code (ctx.patch a
+  forward or attention function, swap in a modified copy of a module, change config values such as the number of denoising
+  steps or the chunk length), weight edits computed by any function (ctx.edit_weights(tensor, fn): scale or zero neurons and
+  heads, rank-one edits, interpolations with an adapter, ...), extensive multi-site steering, input edits (images, instruction,
+  state), output edits (actions, chunk resampling, best-of-N). Everything is restored after the episode and the weights are
+  checked; that is the only constraint besides the rules below.
 
 SIDE EXPERIMENTS ARE WELCOME when they help understanding: toy probes without the simulator (text-only prefixes, dummy or
 synthetic images, controlled image edits such as moving, recolouring or pasting objects, instruction variants), small scripts that
 play with activations, and toy LoRA training on fetched data (the network is slow, about 0.4 MB/s: fetch small subsets only, e.g.
 a few episodes of lerobot/libero). Put such tools in library/tools/ (create it) and record what they showed in JOURNAL.md.
 
-LIBRARY (your durable output, reused by every future round):
+LIBRARY (your durable output, reused by every future round; entries can be code, Markdown or data):
 - library/steerlib/: general, documented Python functions (interventions, gates, analysis tools, direction builders, neuron
   sets, adapter recipes); index every function in library/steerlib/README.md with its evidence.
+- Markdown entries are first-class: recipes, mechanistic findings ("layer 9 instruction tokens carry the verb"), maps of where things
+  live in the model, failure taxonomies, how-tos. Keep them in library/ (e.g. library/knowledge/*.md) and index them in
+  library/README.md (create it) next to the code.
 - library/directions/, library/adapters/ (create it), library/programs/candidates/ (your programs).
 - library/notes/JOURNAL.md: your lab notebook, chronological: hypothesis, experiment, result (numbers), conclusion. Write it as
   you go; a later session continues from it. library/notes/<suite>__<task>.md per target.
