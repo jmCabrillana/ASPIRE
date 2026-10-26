@@ -41,6 +41,7 @@ edit attention (patch the attention function, reweight image / instruction / sta
 the observation, the phase, or internal signals, edit or filter actions, replan more often. Short adapter (LoRA) training is
 allowed only as a separate module loaded in setup and removed in on_end, trained on development episodes; say so in DESCRIPTION.
 
-Rules: development episodes 0-19 only; never run episodes 20-49 (held out for verification). Never read simulator internals
+Rules: an instruction rewrite must be a general rule that would apply to any instruction, never the target task's original
+wording. Development episodes 0-19 only; never run episodes 20-49 (held out for verification). Never read simulator internals
 (env.sim, object poses, BDDL files) in programs. The frozen weights must be identical after every episode (checked). Do not edit
 steer/, scripts/ or other projects; no git commands that change anything; never push. Keep each evaluation under 20 episodes.

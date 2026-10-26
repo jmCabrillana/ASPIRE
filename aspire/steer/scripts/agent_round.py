@@ -26,6 +26,10 @@ def trained_suite(suite: str) -> str | None:
     return None
 
 
+def suite_is_language(suite: str) -> bool:
+    return suite.endswith("_lan")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--suite", required=True)
@@ -35,7 +39,12 @@ def main() -> None:
     a = p.parse_args()
     task = load_task(a.suite, a.task)
     trained = trained_suite(a.suite)
-    hint = f"the same task id in {trained}" if trained else "none"
+    if suite_is_language(a.suite):
+        hint = (f"none to use: this is a paraphrased-instruction task, so you must not use its original wording (no benchmark task "
+                f"name, no {trained} recording or language of task {a.task}, no instruction you know from LIBERO for it). Other "
+                f"tasks of {trained} and other suites are fine as general knowledge")
+    else:
+        hint = f"the same task id in {trained}" if trained else "none"
     text = (HERE / "prompts" / "agent.md").read_text()
     for k, v in {"SUITE": a.suite, "TASK": str(a.task), "INSTRUCTION": task.instruction, "REPAIRS": str(a.repairs),
                  "TRAINED_HINT": hint}.items():

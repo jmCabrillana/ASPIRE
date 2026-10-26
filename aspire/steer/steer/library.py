@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 
@@ -42,12 +43,15 @@ class Context:
     ctx.introspect   the per-chunk internals collector (steer.introspect.Introspect)
     ctx.instruction  the instruction given to the VLA; a program may rewrite it
     ctx.log(key, value)   anything JSON-serialisable (tensors are converted); stored in the episode trace
-    ctx.memory       a dict kept for the episode;  ctx.task: suite, task_id, name, instruction
+    ctx.memory       a dict kept for the episode;  ctx.task: suite, task_id, instruction (no benchmark task name)
     The weights must be the same after the episode as before (checked); temporary in-place edits must be undone in on_end.
     """
 
     def __init__(self, task, policy=None, steering=None, introspect=None):
-        self.task, self.memory, self._dirs = task, {}, {}
+        # Programs see only what a deployed robot would know: the suite, the task id and the instruction it was given
+        # (not the benchmark's task name, which is the training wording of perturbed-language tasks).
+        self.task = SimpleNamespace(suite=task.suite, task_id=task.task_id, instruction=task.instruction)
+        self.memory, self._dirs = {}, {}
         self.policy, self.steering, self.introspect = policy, steering, introspect
         self.vla = policy.policy if policy is not None else None
         self.instruction = task.instruction
