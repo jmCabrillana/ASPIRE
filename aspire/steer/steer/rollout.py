@@ -74,16 +74,22 @@ def load_task(suite: str, task_id: int) -> Task:
 class Policy:
     """SmolVLA with lerobot's pre/post processors. `hooks` is filled by steer.hooks."""
 
-    def __init__(self, checkpoint: str = CHECKPOINT, device: str = "cuda"):
+    def __init__(self, checkpoint: str = CHECKPOINT, device: str = "cuda", n_action_steps: int | None = None):
         from lerobot.policies.factory import make_pre_post_processors
         from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
 
         self.policy = SmolVLAPolicy.from_pretrained(checkpoint).to(device).eval()
+        if n_action_steps:                       # replan more often than the trained 50-step chunks
+            self.policy.config.n_action_steps = n_action_steps
         self.pre, self.post = make_pre_post_processors(self.policy.config, pretrained_path=checkpoint)
         self.device = device
 
     def reset(self) -> None:
         self.policy.reset()
+
+    def chunk_due(self) -> bool:
+        """True when the next act() computes a new action chunk (runs the VLM on the current observation)."""
+        return len(self.policy._queues["action"]) == 0
 
     @torch.no_grad()
     def act(self, obs: dict, instruction: str) -> np.ndarray:
@@ -103,8 +109,18 @@ def make_env(task: Task) -> OffScreenRenderEnv:
     return env
 
 
-def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: int, on_step=None) -> dict:
-    """One episode. on_step(t, obs, action) may return a replacement action (for action-level programs)."""
+def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: int, on_step=None, program=None,
+                steering=None, introspect=None, trace: bool = False) -> dict:
+    """One episode.
+
+    program(t, obs, internals) -> list of steering terms (see steer.hooks.Steering.set), called before every new action chunk;
+    `internals` is the introspection summary of the previous chunk (None for the first, or without `introspect`). Requires
+    `steering`. on_step(t, obs, action) may return a replacement action (action-level programs).
+    trace=True adds "trace": every chunk (time, steering terms, internals) and every 5th step (eef position, gripper, action).
+    """
+    chunks, steps_log, internals = [], [], None
+    if introspect is not None:
+        introspect.reset()
     policy.reset()
     env.seed(episode)
     obs = env.reset()
@@ -116,7 +132,22 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
         robot.controller.use_delta = True
     t0, success, steps = time.time(), False, 0
     for steps in range(1, max_steps(task.suite) + 1):
+        due = policy.chunk_due()
+        terms = []
+        if due and program is not None:
+            terms = program(steps, obs, internals) or []
+            steering.set(terms)
+        if due and introspect is not None:
+            introspect.begin_chunk(steps)
         action = policy.act(obs, task.instruction)
+        if due and introspect is not None:
+            internals = introspect.end_chunk()
+        if due and trace:
+            chunks.append({"t": steps, "steering": [(w, l, round(float(s), 3)) for w, l, _, s in terms], "internals": internals})
+        if trace and steps % 5 == 1:
+            steps_log.append({"t": steps, "eef": [round(float(x), 3) for x in obs["robot0_eef_pos"]],
+                              "gripper": round(float(obs["robot0_gripper_qpos"][0]), 4),
+                              "action": [round(float(x), 3) for x in action]})
         if on_step is not None:
             replaced = on_step(steps, obs, action)
             action = action if replaced is None else replaced
@@ -126,4 +157,9 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
             break
         if done:
             break
-    return {"episode": episode, "success": success, "steps": steps, "seconds": round(time.time() - t0, 1)}
+    if steering is not None and program is not None:
+        steering.clear()
+    out = {"episode": episode, "success": success, "steps": steps, "seconds": round(time.time() - t0, 1)}
+    if trace:
+        out["trace"] = {"chunks": chunks, "steps": steps_log}
+    return out

@@ -1,0 +1,169 @@
+\documentclass[11pt]{article}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,booktabs,hyperref,xcolor,listings,enumitem}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black,citecolor=blue!50!black}
+\lstset{basicstyle=\ttfamily\small,columns=fullflexible,frame=single,framerule=0.3pt,backgroundcolor=\color{gray!6},
+  keywordstyle=\color{blue!60!black},commentstyle=\color{gray!70!black},language=Python,breaklines=true}
+\setlist{itemsep=2pt,topsep=3pt}
+\newcommand{\vla}{\pi_\theta}
+
+\title{Code-as-Steering:\\ Continual Programmatic Adaptation of a Frozen Vision-Language-Action Model}
+\author{ASPIRE project --- working document}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+A coding agent builds a library of executable programs that change how a \emph{frozen} vision-language-action model (VLA)
+behaves at inference time. A program reads the observation and, crucially, the VLA's own internal state (activations,
+attention), and decides which internal interventions to apply: additive steering directions in chosen layers, ablations,
+attention edits, or, as a last resort, small adapters. The agent discovers these interventions by controlled experiments in
+simulation, verifies them on held-out situations, and stores the verified ones with their applicability conditions so they
+can be reused and composed on new tasks. The VLA weights never change, so every gain is attributable to the library. This
+document states the idea, the implementation on SmolVLA in LIBERO and LIBERO-PRO, the first measurements and the plan.
+\end{abstract}
+
+\section{Idea}
+
+Two lines of work meet here. \emph{Code-as-policies} systems (including our own ASPIRE) let a language model write the
+robot's controller; they adapt fast but replace the learned policy with hand-written perception and motion code.
+\emph{Activation steering} shows that adding a direction to a network's hidden states can change its behaviour without
+training; for VLAs this has been demonstrated with fixed, hand-picked directions. What is missing is a system that
+\emph{discovers} which interventions help, \emph{when} to apply them, and keeps that knowledge as reusable code.
+
+\paragraph{Question.} Can a coding agent autonomously discover, verify and compose programs that control the internal
+behaviour of a frozen VLA, so that the robot acquires new capabilities continually, without fine-tuning?
+
+\paragraph{Why it could work.} A fine-tuned VLA already contains most of the skills a perturbed task needs (grasp, place,
+open); failures under distribution shift (moved objects, paraphrased instructions) often look like the right skill
+applied to the wrong target, or a commitment that never happens. Such failures may be correctable by small changes of
+internal state that a program can trigger at the right moment, and the simulator gives cheap, exact feedback on whether
+a change helped (an episode takes 2--10\,s here).
+
+\section{Formulation}
+
+Let $\vla$ be the frozen VLA. At each replanning step it maps the observation $o_t$ (two images, proprioception) and the
+instruction $\ell$ to an action chunk $a_{t:t+H}$. Write $h_{l}$ for the hidden state that layer $l$ adds to the residual
+stream. Three families of interventions, from cheapest to most expensive:
+\begin{align}
+\text{activation:}\quad & h_l' = h_l + \alpha(s)\,v_l, \qquad \|v_l\|=1, \label{eq:act}\\
+\text{parameter:}\quad & W' = W + \textstyle\sum_i g_i(s)\,B_iA_i \quad\text{(low-rank adapters)}, \\
+\text{action:}\quad & a_t' = a_t + \Delta a(s_t).
+\end{align}
+Here $s$ is everything a program may read: the observation, the episode so far, and \emph{the VLA's internals}
+(Section~\ref{sec:introspect}). The first version keeps $\theta$ frozen and uses only~\eqref{eq:act} and simple
+action edits, so every effect is attributable to the library.
+
+\paragraph{Library entry.} An entry is executable knowledge $\mathcal S_i=(p_i,f_i,q_i)$: an applicability condition
+$p_i(s)$, a steering program $f_i(s)$ that returns interventions, and evidence $q_i$ (success with and without the entry, on
+which tasks and initial states, at what simulator cost). A program can call other entries, so entries compose.
+
+\paragraph{Closed-loop internal steering.} Because $p_i$ and $f_i$ may read internal signals, a program can say for
+example: \emph{if the action tokens attend to the wrist image less than usual and the projection on the ``grasp
+committed'' direction is low, push that direction in the middle VLM layers}. The agent writes such rules at the level of
+detail of assembly code, and the simulator decides whether they help.
+
+\section{Implementation}
+
+\subsection{Policy and simulator}
+SmolVLA (450M parameters, checkpoint \texttt{lerobot/smolvla\_libero}, fine-tuned on the four LIBERO suites). It has two
+stacks: 16 layers of a SmolVLM2 text model (width 960) that encode a \emph{prefix} of agentview-image, wrist-image,
+instruction and state tokens once per chunk, and 16 layers of an \emph{action expert} (width 720) that denoise a chunk of
+$H=50$ actions in 10 flow-matching steps, attending to the prefix (cross-attention, with self-attention every second
+layer). The rollout copies lerobot's LIBERO evaluation exactly: $256{\times}256$ images rotated by $180^\circ$, state
+$=$ end-effector position, axis-angle and gripper (8 numbers), initial state $e \bmod 50$ for episode $e$, 10 settling steps,
+the suite's step limit. Environments come from LIBERO-PRO, so the same code runs the trained suites and their perturbed
+versions (object positions swapped, paraphrased instructions, new objects).
+
+\subsection{Intervention sites}
+SmolVLA runs its layers in a custom loop, so whole-layer hooks never fire; each layer's MLP is still called as a module and
+its output is added to the residual stream. A forward hook on \texttt{layer.mlp} therefore implements~\eqref{eq:act}
+exactly. VLM-layer interventions act once per chunk on the prefix (and through the cached keys and values on every
+denoising step); expert-layer interventions act on every denoising step. Strengths are expressed in units of the spread of
+activations along the direction (``a $k\sigma$ push'').
+
+\subsection{Introspection}\label{sec:introspect}
+Per chunk, a small summary that programs read and traces store:
+\begin{itemize}
+\item \textbf{attention}: for each expert layer, the share of the action tokens' attention on each prefix segment (agentview,
+wrist, instruction, state) and on the action tokens, averaged over heads and denoising steps;
+\item \textbf{mlp norms}: norm of each layer's mean MLP output;
+\item \textbf{projections}: projection of each layer's mean MLP output on named directions from the library;
+\item \textbf{behaviour}: end-effector trajectory, gripper and executed actions (every fifth step).
+\end{itemize}
+
+\subsection{Directions}
+Directions are contrasts of recorded activations (mean over tokens, per layer):
+\emph{success} --- successful minus failed episodes of a task; \emph{shift} --- a trained task minus its perturbed version
+(``pull the representation back towards the training distribution''); later, instruction pairs and directions found by
+the agent itself.
+
+\subsection{Programs and library}
+A program is a Python file with one function; the context gives named directions and per-episode memory:
+\begin{lstlisting}
+DIRECTIONS = ["goal1_unswap"]            # projected into `internals`
+
+def program(t, obs, internals, ctx):
+    """Push towards the trained-scene representation until the gripper closes."""
+    if obs["robot0_gripper_qpos"][0] < 0.03:          # gripper closed: let the policy finish
+        return []
+    return [ctx.push("goal1_unswap", layer=8, sigmas=1.5)]
+\end{lstlisting}
+\texttt{scripts/run\_program.py} evaluates a program on development initial states (episodes 0--19) and writes traces;
+held-out initial states (20--49) are only used for verification. Verified programs and their directions live in
+\texttt{library/}, with their evidence.
+
+\subsection{Agent loop}
+\begin{enumerate}
+\item Pick a failing or unreliable task; run the frozen VLA with traces.
+\item Diagnose from behaviour and internals (where does the policy look, what does it commit to, where does it diverge
+from a trained-scene rollout).
+\item Propose interventions: build directions, choose sites, write a program with conditions; evaluate on development
+episodes; iterate within a budget.
+\item Verify the best program on held-out initial states; store it only if it beats the frozen VLA there.
+\item Reuse: on a new task, first try the library's entries (and compositions) before searching.
+\end{enumerate}
+Escalation order: logging only $\rightarrow$ activation and attention edits $\rightarrow$ action edits $\rightarrow$ short
+low-rank adapter runs (at most one at a time, minutes of GPU), with every entry recording its simulator cost so methods can be
+compared at equal budget. A verified program can later be \emph{compiled} into an adapter by distilling its behaviour.
+
+\section{First measurements}\label{sec:results}
+\input{results_baseline.tex}
+
+\section{Plan}
+\begin{enumerate}
+\item \textbf{Baseline} (done for the suites above): frozen SmolVLA per task, 10 episodes.
+\item \textbf{Steering works at all}: record mixed-outcome and trained/perturbed pairs, build success and shift directions,
+sweep layer $\times$ strength on held-out initial states. Success criterion: an intervention that raises success on held-out
+states of a task where the frozen policy fails, by more than the binomial noise (with 30 episodes, a rise from 0.2 to 0.5 is
+significant at the 5\% level).
+\item \textbf{State-dependent steering}: the same directions gated by phase (before/after grasp) and by internal signals.
+\item \textbf{Agent-written programs}: the coding agent runs the loop above on LIBERO-PRO perturbed tasks; library
+entries verified on held-out states.
+\item \textbf{Transfer}: entries discovered on some perturbed tasks evaluated on other perturbed tasks and suites, without
+search; compare with search from scratch at equal simulator budget.
+\item \textbf{Parameter level}: short low-rank adapter runs on self-generated successful rollouts, and compilation of
+verified programs into adapters.
+\end{enumerate}
+
+\paragraph{Baselines and ablations.} Frozen VLA; fixed steering (no state dependence); state-dependent steering without
+internal signals; programs without the library (search per task); full library. An equal-budget comparison against learned
+residual corrections or adapters trained with the same number of simulator episodes is needed to show that the benefit comes
+from program synthesis and not from simulator experience alone.
+
+\paragraph{Risks.} (i) Steering directions may not be causal or may not exist for a failure mode; the sweep in step~2 tests
+this before any agent work. (ii) Gains on development initial states may be noise; verification on held-out states and
+binomial confidence intervals guard against it. (iii) The perturbed suites may be failures of perception that no internal
+push can fix; language perturbations are the most likely to respond to steering, position swaps the least.
+
+\section{Related work (to be checked in detail)}
+Mechanistic steering of VLAs with fixed internal directions; synthesised steering objectives for frozen robot policies;
+learned latent steering triggered when failure is likely; libraries of task-specific adapters with dynamic routing;
+residual corrections trained in simulation for frozen VLAs; and code-as-policies systems with skill libraries (ASPIRE).
+The distinctive claim here is the automated synthesis, verification, composition and reuse of state- and
+internal-signal-dependent steering programs; a full literature check is needed before stating novelty.
+
+\end{document}
