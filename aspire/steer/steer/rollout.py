@@ -110,13 +110,14 @@ def make_env(task: Task) -> OffScreenRenderEnv:
 
 
 def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: int, on_step=None, program=None,
-                steering=None, introspect=None, trace: bool = False) -> dict:
+                steering=None, introspect=None, trace: bool = False, ctx=None) -> dict:
     """One episode.
 
     program(t, obs, internals) -> list of steering terms (see steer.hooks.Steering.set), called before every new action chunk;
     `internals` is the introspection summary of the previous chunk (None for the first, or without `introspect`). Requires
     `steering`. on_step(t, obs, action) may return a replacement action (action-level programs).
     trace=True adds "trace": every chunk (time, steering terms, internals) and every 5th step (eef position, gripper, action).
+    ctx (steer.library.Context): its instruction is what the VLA receives, ctx.t follows the step, ctx.logs go into the trace.
     """
     chunks, steps_log, internals = [], [], None
     if introspect is not None:
@@ -132,6 +133,8 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
         robot.controller.use_delta = True
     t0, success, steps = time.time(), False, 0
     for steps in range(1, max_steps(task.suite) + 1):
+        if ctx is not None:
+            ctx.t = steps
         due = policy.chunk_due()
         terms = []
         if due and program is not None:
@@ -139,7 +142,7 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
             steering.set(terms)
         if due and introspect is not None:
             introspect.begin_chunk(steps)
-        action = policy.act(obs, task.instruction)
+        action = policy.act(obs, task.instruction if ctx is None else ctx.instruction)
         if due and introspect is not None:
             internals = introspect.end_chunk()
         if due and trace:
@@ -161,5 +164,5 @@ def run_episode(env: OffScreenRenderEnv, policy: Policy, task: Task, episode: in
         steering.clear()
     out = {"episode": episode, "success": success, "steps": steps, "seconds": round(time.time() - t0, 1)}
     if trace:
-        out["trace"] = {"chunks": chunks, "steps": steps_log}
+        out["trace"] = {"chunks": chunks, "steps": steps_log, "log": [] if ctx is None else ctx.logs}
     return out

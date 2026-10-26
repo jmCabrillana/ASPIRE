@@ -16,10 +16,23 @@ How:
    MLP norms, projections). Compare with a trained-suite version of the task if one exists ({{TRAINED_HINT}}).
 2. Build directions you think are causal: scripts/record.py + scripts/make_direction.py (success, shift:<recording>), or your own
    contrasts with steer/directions.py (e.g. record a variant instruction or scene). Directions go to library/directions/.
-3. Write candidate programs in library/programs/candidates/<short_name>.py: program(t, obs, internals, ctx) returns steering terms
-   (ctx.push(name, layer, sigmas) or (where, layer, unit, strength)); it may gate on the observation, on the step, on ctx.memory
-   and on `internals` (previous chunk). DESCRIPTION = one line. DIRECTIONS = directions to project into internals.
-   You may also add small helper modules under library/programs/candidates/ and import them.
+3. Write candidate programs in library/programs/candidates/<short_name>.py. Programs are OPEN: you may log anything and steer with
+   any method at inference time. A program file may define (all optional; see steer/library.py and the example
+   library/programs/examples/open_example.py):
+     setup(ctx)                       once per episode: register hooks (ctx.hook(module, fn, pre=False)), patch methods
+                                      (ctx.patch(obj, name, value)), rewrite ctx.instruction, ...
+     program(t, obs, internals, ctx)  before every new action chunk; returns additive steering terms, e.g.
+                                      [ctx.push("<direction>", layer, sigmas)] or [(where, layer, unit, strength)]
+     on_step(t, obs, action, ctx)     every step; return a replacement action (or None)
+     on_end(result, ctx)              after the episode; undo any in-place change
+     DESCRIPTION, DIRECTIONS (projected into internals), N_ACTION_STEPS (replan every n steps instead of 50)
+   ctx gives the whole model: ctx.vla (SmolVLAPolicy), ctx.vlm_layers, ctx.expert_layers, ctx.introspect, ctx.steering,
+   ctx.memory, and ctx.log(key, value) writes anything into the episode trace. Examples of methods: add or ablate directions,
+   clamp or rescale activations, edit attention (patch the attention function), mask or reweight image / instruction tokens,
+   rewrite the instruction, gate interventions on the observation, on the step or on internal signals, edit or filter
+   actions, replan more often. Short adapter (LoRA) training is allowed only as a separate module you load in setup and
+   remove in on_end, trained on development episodes; say so in DESCRIPTION. The frozen weights must be identical after every
+   episode (the evaluator checks it). You may add helper modules next to your programs and import them.
 4. Evaluate: .venv/bin/python scripts/run_program.py --program library/programs/candidates/<name>.py --suite {{SUITE}} --task {{TASK}} --episodes 0-19 [--trace]
    To replan more often than every 50 steps (so steering decisions are made more often), set N_ACTION_STEPS = 10 (or 25) in the
    program file; the evaluation and the verification both read it.

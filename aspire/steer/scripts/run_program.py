@@ -20,7 +20,9 @@ sys.path.insert(0, str(HERE))
 from scripts.record import episodes as parse_episodes  # noqa: E402
 from steer.hooks import Steering  # noqa: E402
 from steer.introspect import Introspect  # noqa: E402
-from steer.library import Context, load_direction, load_program  # noqa: E402
+import torch  # noqa: E402
+
+from steer.library import Context, load_direction, load_program, weights_fingerprint  # noqa: E402
 from steer.rollout import Policy, load_task, make_env, run_episode  # noqa: E402
 
 DEV_MAX = 19
@@ -28,14 +30,24 @@ DEV_MAX = 19
 
 def evaluate(policy, steering, intro, task, eps: list[int], module, trace: bool, out: Path | None) -> dict:
     env = make_env(task)
-    runs = []
+    runs, before = [], weights_fingerprint(policy.policy)
     for e in eps:
-        if module is None:
-            fn = None
-        else:
-            ctx = Context(task)
-            fn = lambda t, obs, internals, ctx=ctx: module.program(t, obs, internals, ctx)   # noqa: E731
-        r = run_episode(env, policy, task, e, program=fn, steering=steering if fn else None, introspect=intro, trace=trace)
+        ctx = Context(task, policy, steering, intro)
+        call = (lambda name: getattr(module, name, None)) if module is not None else (lambda name: None)
+        prog, step, setup, end = call("program"), call("on_step"), call("setup"), call("on_end")
+        if setup:
+            setup(ctx)
+        fn = (lambda t, obs, internals: prog(t, obs, internals, ctx)) if prog else None
+        on_step = (lambda t, obs, action: step(t, obs, action, ctx)) if step else None
+        try:
+            r = run_episode(env, policy, task, e, on_step=on_step, program=fn, steering=steering if fn else None,
+                            introspect=intro, trace=trace, ctx=ctx)
+            if end:
+                end(r, ctx)
+        finally:
+            ctx.close()
+        if not torch.allclose(weights_fingerprint(policy.policy), before):
+            raise SystemExit("the program left the VLA weights changed; undo in-place edits in on_end(result, ctx)")
         if out is not None and trace:
             (out / f"episode_{e}.json").write_text(json.dumps(r, indent=1) + "\n")
         runs.append({k: v for k, v in r.items() if k != "trace"})
