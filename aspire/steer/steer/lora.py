@@ -129,3 +129,50 @@ def train(policy, ad: Adapter, episodes, steps: int = 200, lr: float = 1e-4, log
         for p in params:
             p.requires_grad_(False)
     return losses
+
+
+class AdapterBank:
+    """Several adapters behind one set of LoRA slots, switchable mid-episode (e.g. per chunk, from program()).
+
+        bank = AdapterBank(ctx.policy, targets=("q_proj", "v_proj"), where="expert", rank=8)   # in setup(ctx)
+        bank.add("drawer", "library/adapters/drawer.pt", key=mean_activation_vector)            # retrieval key (optional)
+        bank.use(bank.retrieve(current_activation))   # or bank.use("drawer") / bank.off()
+        bank.close()                                  # in on_end: base model restored
+    Switching copies the adapter's A, B into the slots (microseconds); off() zeroes B (exactly the base model).
+    """
+
+    def __init__(self, policy, **attach_kwargs):
+        self.policy, self.ad = policy, attach(policy, **attach_kwargs)
+        self.adapters: dict[str, list] = {}
+        self.keys: dict[str, torch.Tensor] = {}
+        self.active: str | None = None
+        self.off()
+
+    def add(self, name: str, path_or_params, key: torch.Tensor | None = None) -> None:
+        self.adapters[name] = torch.load(path_or_params) if not isinstance(path_or_params, list) else path_or_params
+        if key is not None:
+            self.keys[name] = key.float().flatten() / key.float().norm()
+
+    def use(self, name: str | None) -> None:
+        if name is None:
+            return self.off()
+        for (_, _, m), (a, b) in zip(self.ad.slots, self.adapters[name]):
+            m.A.data.copy_(a.to(m.A.device))
+            m.B.data.copy_(b.to(m.B.device))
+        self.active = name
+
+    def off(self) -> None:
+        for _, _, m in self.ad.slots:
+            m.B.data.zero_()
+        self.active = None
+
+    def retrieve(self, query: torch.Tensor, min_cos: float = 0.0) -> str | None:
+        """Name of the adapter whose key is most similar (cosine) to `query`, or None below min_cos."""
+        if not self.keys:
+            return None
+        q = query.float().flatten() / query.float().norm()
+        name, cos = max(((n, float(k.to(q.device) @ q)) for n, k in self.keys.items()), key=lambda x: x[1])
+        return name if cos >= min_cos else None
+
+    def close(self) -> None:
+        detach(self.policy, self.ad)

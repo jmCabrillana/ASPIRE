@@ -44,6 +44,9 @@ library/programs/examples/open_example.py):
 - LoRA (steer/lora.py): attach / train / save / load / detach small adapters on development episodes (40 steps take ~3 s);
   base weights are restored exactly. Use it as one tool among others (e.g. distil a steering program into an adapter, or
   combine an adapter with steering), not as the only answer.
+  Adapters can also be switched on the fly: steer/lora.py AdapterBank keeps several adapters behind one set of slots; a program
+  can pick one per chunk, e.g. retrieved by similarity between the current activations and stored keys (activation-dependent
+  retrieval), or turn them off. Mixing adapters with steering and neuron edits is encouraged.
 - Programs (steer/library.py) are fully OPEN-ENDED: setup(ctx), program(t, obs, internals, ctx), on_step(t, obs, action, ctx),
   on_end(result, ctx). A program may log anything (about the task, the observations, its own code and decisions, any tensor of the
   VLA) with ctx.log, and change anything during the episode: hooks on any module (ctx.hook), rewritten model code (ctx.patch a
