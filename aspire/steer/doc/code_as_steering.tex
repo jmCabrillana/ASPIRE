@@ -102,19 +102,39 @@ Directions are contrasts of recorded activations (mean over tokens, per layer):
 the agent itself.
 
 \subsection{Programs and library}
-A program is a Python file with one function; the context gives named directions and per-episode memory:
+Programs are deliberately \emph{open}: the agent can log anything and intervene with any inference-time method. A program
+file may define four optional functions, and the context exposes the whole model:
+\begin{itemize}
+\item \texttt{setup(ctx)} once per episode: register hooks on any module (\texttt{ctx.hook}), patch methods such as the
+attention function (\texttt{ctx.patch}), rewrite the instruction (\texttt{ctx.instruction});
+\item \texttt{program(t, obs, internals, ctx)} before every action chunk: return additive steering terms;
+\item \texttt{on\_step(t, obs, action, ctx)} every control step: replace the action;
+\item \texttt{on\_end(result, ctx)}: undo in-place edits.
+\end{itemize}
+\texttt{ctx.vla}, \texttt{ctx.vlm\_layers} and \texttt{ctx.expert\_layers} give the model, \texttt{ctx.log(key, value)} writes
+arbitrary values into the episode trace, \texttt{ctx.memory} keeps state within the episode. The only hard constraints:
+no simulator ground truth (object poses, simulator state), and the frozen weights must be identical after each episode
+(checked by the evaluator; adapters are allowed as separate modules loaded and removed by the program).
 \begin{lstlisting}
-DIRECTIONS = ["goal1_unswap"]            # projected into `internals`
+DIRECTIONS = ["goal_lan_0_shift_vlm"]       # projected into `internals`
 
-def program(t, obs, internals, ctx):
-    """Push towards the trained-scene representation until the gripper closes."""
-    if obs["robot0_gripper_qpos"][0] < 0.03:          # gripper closed: let the policy finish
+def setup(ctx):                             # log per-token norms of VLM layer 8 on every prefix pass
+    ctx.hook(ctx.vlm_layers[8].mlp,
+             lambda m, i, out: ctx.log("vlm8_norms", out[0, :8].norm(dim=-1)))
+
+def program(t, obs, internals, ctx):        # pull the paraphrase towards the trained instruction until the grasp
+    if obs["robot0_gripper_qpos"][0] < 0.03:
         return []
-    return [ctx.push("goal1_unswap", layer=8, sigmas=1.5)]
+    return [ctx.push("goal_lan_0_shift_vlm", layer=7, sigmas=2.0)]
+
+def on_step(t, obs, action, ctx):           # slow down once something is held
+    if obs["robot0_gripper_qpos"][0] < 0.03:
+        action = action.copy(); action[:3] *= 0.5
+        return action
 \end{lstlisting}
 \texttt{scripts/run\_program.py} evaluates a program on development initial states (episodes 0--19) and writes traces;
-held-out initial states (20--49) are only used for verification. Verified programs and their directions live in
-\texttt{library/}, with their evidence.
+held-out initial states (20--49) are only used by \texttt{scripts/verify.py}, which promotes a program into the library when it
+beats the frozen VLA there (one-sided Fisher exact test, 5\%).
 
 \subsection{Agent loop}
 \begin{enumerate}
