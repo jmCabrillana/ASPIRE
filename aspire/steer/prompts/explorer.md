@@ -28,6 +28,13 @@ library/programs/examples/open_example.py):
   tokens 1:) / ||W_down[:, n]|| (dose 1 moves the residual by about one typical norm). Single neurons have been enough to change
   LLM behaviour dramatically; look for neurons or small sets that change where the robot goes, which object it picks, gripper
   timing, and so on.
+- Classic interpretability (steer/interp.py): Bank.build over saved episodes = neuron activations per chunk (per prefix segment
+  for VLM layers, averaged over action tokens and denoising steps for the expert) with labels (success, phase, eef x/y/z, executed
+  dx/dy/dz, gripper, t); bank.selective (AUROC / correlation per neuron), bank.top_examples (max-activating chunks), bank.probe
+  (linear probes, folds grouped by episode, returns the probe direction for steering), word_neurons (neurons that fire on one
+  instruction word). Use them the traditional way: find which neurons respond to which observation, action or word, probe what
+  each layer encodes (target object, position, phase, verb), then edit the model (pushes, ablations, weight edits) based on that.
+  Add your own labels (e.g. target object, instruction verb) and banks over trained tasks.
 - Steering hooks (steer/hooks.py Steering), introspection (attention shares of the action tokens per segment, MLP norms,
   projections), and you can patch anything (attention function, embeddings, instruction tokens) from a program via ctx.patch.
 - LoRA (steer/lora.py): attach / train / save / load / detach small adapters on development episodes (40 steps take ~3 s);

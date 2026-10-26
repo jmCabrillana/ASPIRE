@@ -123,6 +123,15 @@ where $r_L$ is the residual stream leaving layer $L$, so a dose of one moves the
 neuron's output direction.
 \end{itemize}
 
+\subsection{Classic interpretability}
+\texttt{steer/interp.py} builds an activation bank over saved episodes: for every chunk, the activations of all neurons of
+chosen layers, summarised per prefix segment (VLM) or over action tokens and denoising steps (expert), with labels (success,
+gripper phase, end-effector position, executed displacement and gripper command, time). On it: neuron selectivity (AUROC for binary
+labels, correlation otherwise), max-activating examples, word-selective neurons on the instruction tokens, and linear probes with
+folds grouped by episode, whose weight vectors double as steering directions. A first check on 74 chunks: gripper phase is linearly
+decodable from wrist-image tokens at VLM layer 8 (accuracy 0.81 against 0.69 chance) and the upcoming vertical motion from the state
+token at layer 12 ($R^2=0.72$); one neuron of layer 8 responds strongly and specifically to the word ``cheese''.
+
 \subsection{Adapters}
 \texttt{steer/lora.py} wraps chosen linear layers of either stack with zero-initialised low-rank adapters, trains them with
 SmolVLA's own flow-matching loss on saved (observation, executed chunk) pairs (40 steps take about 3\,s), and detaches them so

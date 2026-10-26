@@ -52,6 +52,7 @@ reusable code, and reuse them on new tasks, getting close to what one-shot fine-
 | `steer/introspect.py` | per-chunk internals: attention shares per segment, MLP norms, projections |
 | `steer/directions.py`, `steer/library.py` | contrast directions; the program API (`Context`), direction files, program loading, weight check |
 | `steer/lab.py` | offline lab: chunk prediction, capture, edit and swap activations; `Neurons`: attribution patching, dosed pushes |
+| `steer/interp.py` | classic interpretability: activation bank over saved episodes, neuron selectivity (AUROC / correlation), max-activating examples, linear probes (grouped by episode), word-selective neurons |
 | `steer/lora.py` | LoRA adapters: attach, train on saved episodes, save, load, detach |
 | `scripts/baseline.py` | frozen success rate per task |
 | `scripts/record.py`, `make_direction.py`, `sweep.py`, `pilot.py` | record activations, build directions, fixed layer x strength sweeps |
