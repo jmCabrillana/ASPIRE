@@ -25,6 +25,7 @@ import torch  # noqa: E402
 
 from steer.library import Context, load_direction, load_program, weights_fingerprint  # noqa: E402
 from steer.rollout import Policy, load_task, make_env, run_episode  # noqa: E402
+from steer.versions import library_hash  # noqa: E402
 
 DEV_MAX = 19
 
@@ -87,7 +88,7 @@ def main() -> None:
             dirs[f"{d}@{layer}"] = (data["where"], layer, data["unit"][layer])
     intro = Introspect(policy, directions=dirs)
     res = evaluate(policy, steering, intro, load_task(a.suite, a.task), eps, module, a.trace, out, a.save_obs)
-    res.update(program=name, suite=a.suite, task=a.task, n_action_steps=n_steps)
+    res.update(program=name, suite=a.suite, task=a.task, n_action_steps=n_steps, library_hash=library_hash())
     (out / ("summary_heldout.json" if a.heldout else "summary.json")).write_text(json.dumps(res, indent=1) + "\n")
     print(f"{name} on {a.suite} {a.task}: success {res['success_rate']:.2f} over episodes {a.episodes}")
 

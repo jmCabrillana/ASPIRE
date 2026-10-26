@@ -15,6 +15,10 @@ import os
 import subprocess
 import time
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from steer.versions import snapshot  # noqa: E402
 
 HERE = Path(__file__).resolve().parents[1]
 CAND = HERE / "library" / "programs" / "candidates"
@@ -60,9 +64,10 @@ def verify_requests() -> None:
             log(f"bad request name {req.name}")
             req.rename(req.with_name("BAD_" + req.name))
             continue
-        log(f"verifying {program} on {suite} {task}")
+        version = snapshot(f"verify {Path(program).stem} on {suite} {task}")
+        log(f"verifying {program} on {suite} {task} (library {version})")
         r = subprocess.run([str(HERE / ".venv" / "bin" / "python"), "scripts/verify.py", "--program", program,
-                            "--suite", suite, "--task", task], cwd=HERE, capture_output=True, text=True)
+                            "--suite", suite, "--task", task, "--library-version", version], cwd=HERE, capture_output=True, text=True)
         log((r.stdout.strip().splitlines() or ["(no output)"])[-1] if r.returncode == 0 else f"verify failed: {r.stderr[-300:]}")
         req.rename(req.with_name("DONE_" + req.name))
 
@@ -81,8 +86,13 @@ def main() -> None:
         log("explorer session already running; attaching")
     else:
         start(a.model, resume=(HERE / "library" / "notes" / "JOURNAL.md").exists())
+    last_snapshot = 0.0
     while time.time() < deadline:
         verify_requests()
+        if time.time() - last_snapshot > 900:                # a version every 15 min when the library changed
+            v = snapshot("periodic")
+            last_snapshot = time.time()
+            log(f"library {v}")
         if not alive():
             if restarts >= a.max_restarts:
                 log("explorer ended too often; stopping")
@@ -93,6 +103,7 @@ def main() -> None:
     subprocess.run(["tmux", "send-keys", "-t", SESSION, "Escape"], capture_output=True)
     log("deadline reached; explorer stopped (session kept for inspection)")
     verify_requests()
+    log(f"final library {snapshot('end of exploration')}")
 
 
 if __name__ == "__main__":
