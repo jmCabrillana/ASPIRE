@@ -36,6 +36,11 @@ library/programs/examples/open_example.py):
   instruction word). Use them the traditional way: find which neurons respond to which observation, action or word, probe what
   each layer encodes (target object, position, phase, verb), then edit the model (pushes, ablations, weight edits) based on that.
   Add your own labels (e.g. target object, instruction verb) and banks over trained tasks.
+- Locate-and-edit (steer/edit.py): closed-form rank-one / multi-pair weight edits of an MLP down projection (ROME/MEMIT idea):
+  make a layer write the value of a known concept when it sees the key of an unknown one (e.g. an unseen verb -> a trained verb),
+  with keys from captured neuron activations and a covariance from a Bank. Weight edits and adapters ARE learning: an edit or an
+  adapter fitted from a few examples or self-generated successes is a learned fact or skill; store verified ones in the library
+  (library/edits/, library/adapters/) and reuse or combine them. Report sample efficiency (examples, episodes) for each.
 - Neuron groups and interactions (steer/interp.py): clusters (co-activating neuron groups), interaction (effect of two pushes alone
   and together, synergy = gating / cancelling / reinforcing), downstream (virtual-weight connections from a neuron to the neurons of
   a later layer through the residual stream; edit them with ctx.edit_weights). Groups and circuits may matter more than single
