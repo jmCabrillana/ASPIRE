@@ -19,7 +19,7 @@ while a run is going (wait inside one Bash call, timeout 600000, repeat the call
      .venv/bin/python scripts/run_program.py --program <file> --suite {{SUITE}} --task {{TASK}} --episodes 0-9 --trace
 
 2. Repairs. Take the best candidate; up to {{REPAIRS}} times: read its traces, find why it still fails, write the next version
-   (__r1.py, __r2.py, ...) and evaluate it on episodes 0-19 with --trace. Stop early if it succeeds on all 20.
+   (__r1.py, __r2.py, ...) and evaluate it on episodes 0-9 with --trace; use 0-19 only to confirm the final one.
 
 3. Library update (the most important step). Move what worked, or partly worked, out of the programs into library/steerlib/ as
    general, documented functions (new modules are fine: e.g. steerlib/directions_live.py, steerlib/attention.py), keep useful

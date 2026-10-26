@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parents[1]
 CAND = HERE / "library" / "programs" / "candidates"
 SESSION = "steer-explorer"
 LOG = HERE / "outputs" / "explore.log"
+ENDED = HERE / "outputs" / "explorer_ended"         # touched by the tmux command when claude exits
 
 
 def log(msg: str) -> None:
@@ -37,16 +38,17 @@ def start(model: str, resume: bool) -> None:
                  "library/steerlib/README.md first and continue the most promising line of work.\n")
     prompt.write_text(text)
     subprocess.run(["tmux", "kill-session", "-t", SESSION], capture_output=True)
+    ENDED.unlink(missing_ok=True)
     cmd = (f"unset ANTHROPIC_API_KEY; export MUJOCO_GL=egl PATH=$HOME/.local/bin:$PATH; "
-           f"claude --model {model} \"$(cat {prompt})\"; bash")
+           f"claude --model {model} \"$(cat {prompt})\"; touch {ENDED}; bash")
     subprocess.run(["tmux", "new-session", "-d", "-s", SESSION, "-c", str(HERE), cmd], check=True)
     log(f"explorer session started ({'resume' if resume else 'fresh'})")
 
 
 def alive() -> bool:
-    """True while claude runs inside the session (the trailing bash keeps the session itself open)."""
-    r = subprocess.run(["tmux", "list-panes", "-t", SESSION, "-F", "#{pane_current_command}"], capture_output=True, text=True)
-    return r.returncode == 0 and "bash" not in r.stdout.split()
+    """True while claude runs inside the session (the session itself stays open after it exits)."""
+    exists = subprocess.run(["tmux", "has-session", "-t", SESSION], capture_output=True).returncode == 0
+    return exists and not ENDED.exists()
 
 
 def verify_requests() -> None:
@@ -75,7 +77,10 @@ def main() -> None:
     CAND.mkdir(parents=True, exist_ok=True)
     (HERE / "library" / "notes").mkdir(parents=True, exist_ok=True)
     deadline, restarts = time.time() + a.hours * 3600, 0
-    start(a.model, resume=(HERE / "library" / "notes" / "JOURNAL.md").exists())
+    if alive():
+        log("explorer session already running; attaching")
+    else:
+        start(a.model, resume=(HERE / "library" / "notes" / "JOURNAL.md").exists())
     while time.time() < deadline:
         verify_requests()
         if not alive():

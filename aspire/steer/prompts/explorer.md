@@ -16,6 +16,8 @@ first try what the library already has.
 
 TOOLS (read the code first: steer/rollout.py, hooks.py, introspect.py, library.py, lab.py, lora.py; example program
 library/programs/examples/open_example.py):
+- Evaluation size: screen ideas on 5-10 episodes (with a frozen baseline near 0, one or two successes already show a lift); use
+  20 only to confirm a promising program before requesting verification. The held-out verification (30 episodes) is the real test.
 - Simulator evaluation: .venv/bin/python scripts/run_program.py --program <file|none> --suite S --task T --episodes 0-19
   [--trace] [--save-obs]   (2-10 s per episode; --save-obs keeps every chunk's observation + actions as episode_<n>.npz).
 - Offline lab, no simulator, ~0.5 s per forward pass (steer/lab.py): load saved observations, predict action chunks with a
