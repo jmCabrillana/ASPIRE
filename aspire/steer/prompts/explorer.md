@@ -36,6 +36,11 @@ library/programs/examples/open_example.py):
 - Programs (steer/library.py): setup(ctx), program(t, obs, internals, ctx), on_step(t, obs, action, ctx), on_end(result, ctx);
   ctx.vla, ctx.vlm_layers, ctx.expert_layers, ctx.hook, ctx.patch, ctx.instruction, ctx.steering, ctx.memory, ctx.log.
 
+SIDE EXPERIMENTS ARE WELCOME when they help understanding: toy probes without the simulator (text-only prefixes, dummy or
+synthetic images, controlled image edits such as moving, recolouring or pasting objects, instruction variants), small scripts that
+play with activations, and toy LoRA training on fetched data (the network is slow, about 0.4 MB/s: fetch small subsets only, e.g.
+a few episodes of lerobot/libero). Put such tools in library/tools/ (create it) and record what they showed in JOURNAL.md.
+
 LIBRARY (your durable output, reused by every future round):
 - library/steerlib/: general, documented Python functions (interventions, gates, analysis tools, direction builders, neuron
   sets, adapter recipes); index every function in library/steerlib/README.md with its evidence.
