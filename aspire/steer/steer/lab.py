@@ -221,3 +221,53 @@ class Neurons:
                 hh.remove()
         return {i: sum((x * x.grad).detach()[0].float().sum(dim=0).cpu() for x in acts[i] if x.grad is not None)
                 for i in which}
+
+
+# ---- learned steering: optimise an intervention by gradient through the frozen VLA ------------------------------------
+
+def optimize_vector(lab: "Lab", examples: list[tuple[dict, str, np.ndarray]], where: str, layer: int, steps: int = 100,
+                    lr: float = 0.05, l2: float = 1e-3, tokens: slice | None = None, seed: int = 0) -> torch.Tensor:
+    """Find one additive vector v at a layer's MLP output (optionally only on a token span) such that the frozen VLA's predicted
+    chunks match target chunks: examples = [(obs, instruction, target (50, 7) normalised actions)]. Gradient descent through
+    the 10 denoising steps with fixed noise; returns v (width,). Use the result with Steering or ctx.hook."""
+    p = lab.policy
+    width = layers(p, where)[layer].mlp.down_proj.out_features
+    dev = next(p.policy.parameters()).device
+    v = torch.zeros(width, device=dev, requires_grad=True)
+    opt = torch.optim.Adam([v], lr=lr)
+    for prm in p.policy.parameters():
+        prm.requires_grad_(False)
+
+    def hook(m, inp, out):
+        sl = tokens if tokens is not None else slice(None)
+        add = torch.zeros_like(out)
+        add[:, sl] = v.to(out.dtype)
+        return out + add
+
+    h = layers(p, where)[layer].mlp.register_forward_hook(hook)
+    try:
+        batches = [(p.policy._prepare_batch(p.pre(p.batch(o, ins))), torch.as_tensor(t, dtype=torch.float32, device=dev))
+                   for o, ins, t in examples]
+        for step in range(steps):
+            loss = 0.0
+            for batch, target in batches:
+                torch.manual_seed(seed)
+                with torch.enable_grad():
+                    pred = p.policy._get_action_chunk(batch, None)[0]
+                    loss = loss + ((pred[: len(target)] - target) ** 2).mean()
+            loss = loss / len(batches) + l2 * v.pow(2).sum()
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+    finally:
+        h.remove()
+    return v.detach()
+
+
+def normalised_chunk(lab: "Lab", obs: dict, instruction: str, seed: int = 0) -> np.ndarray:
+    """The predicted chunk in the policy's normalised action space (the space optimize_vector matches in)."""
+    p = lab.policy
+    batch = p.policy._prepare_batch(p.pre(p.batch(obs, instruction)))
+    torch.manual_seed(seed)
+    with torch.no_grad():
+        return p.policy._get_action_chunk(batch, None)[0].float().cpu().numpy()
