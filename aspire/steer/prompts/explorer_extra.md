@@ -15,3 +15,13 @@ session should go beyond them, toward smarter internal interventions found by re
 - Insertions inside the network: the expert reads (token, position) pairs; inserting tokens into padding slots with assigned
   positions may fix structural paraphrases without rewriting the text.
 Keep writing JOURNAL.md, keep the network map and recipes up to date, and keep the reserved suites untouched.
+
+PAPER TARGETS (what the results must eventually show; design experiments so each has clean evidence):
+1. Discovered, not predefined: interventions the agent found from simulation and dissection (log how each was found: experiment,
+   data, cost), compared with the seed library's predefined tools alone.
+2. State-dependent control: programs that decide WHEN (phase, internal signals), WHERE (layer, tokens, neurons, adapter) and HOW
+   STRONGLY to intervene from the state; show with ablations that the gating matters (always-on vs gated, fixed vs adaptive dose).
+3. Composition on unseen tasks: library entries combined on task compositions never seen during development (multi-step tasks,
+   new pairings of objects and destinations); the reserved suites will be the final test, so prepare general entries.
+4. Improvement over time without fine-tuning: keep a fixed panel of development tasks and record, per library version, how the
+   entry program (programs/candidates/auto.py) does on it, so the curve "library version -> success" can be drawn.
