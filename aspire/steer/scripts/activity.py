@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Build a zoomable timeline of everything the research agent did (outputs/activity.html).
+"""Build a zoomable timeline of everything the research agent did (reports/activity/activity_<library version>.html, plus
+reports/activity/latest.html).
 
   .venv/bin/python scripts/activity.py
 
@@ -15,10 +16,14 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import sys
 
 HERE = Path(__file__).resolve().parents[1]
+REPORTS = HERE / "reports" / "activity"
 TRANSCRIPTS = Path.home() / ".claude" / "projects" / ("-" + str(HERE).strip("/").replace("/", "-"))
 LOCAL = timezone(timedelta(hours=8))
+sys.path.insert(0, str(HERE))
+from steer.versions import current  # noqa: E402
 THREADS = [
     ("swap", "Swapped layouts", r"swap|handback|hand-back|virtual|track|siglip|scene\.|calib|homograph|footprint|reference|carry"),
     ("edits", "Edits and neurons", r"lexedit|lexfact|edit\.py|rank.one|neuron|attribut|levers|optimize_vector|patch|probe|bank|interp|jacobian|cluster|dose"),
@@ -230,9 +235,14 @@ def main() -> None:
             e["uses"] = [u for u in used if any(k == u or k.startswith(u) for k in items)] or used
     data = {"generated": datetime.now(LOCAL).strftime("%Y-%m-%d %H:%M"), "sessions": sessions, "events": events,
             "lanes": [{"key": k, "name": n} for k, n, _ in THREADS], "items": items}
+    version = (current() or {}).get("version", "v000")
+    data["library_version"] = version
     template = (HERE / "scripts" / "activity_template.html").read_text()
-    out = HERE / "outputs" / "activity.html"
-    out.write_text(template.replace("/*DATA*/null", json.dumps(data, separators=(",", ":")).replace("</", "<\\/")))
+    page = template.replace("/*DATA*/null", json.dumps(data, separators=(",", ":")).replace("</", "<\\/"))
+    REPORTS.mkdir(parents=True, exist_ok=True)
+    out = REPORTS / f"activity_{version}.html"         # one page per library version; latest.html is the newest
+    out.write_text(page)
+    (REPORTS / "latest.html").write_text(page)
     kinds = {}
     for e in events:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1

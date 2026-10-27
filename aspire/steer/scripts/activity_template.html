@@ -89,7 +89,7 @@ const fmt = d3.timeFormat("%b %d %H:%M");
 const count = k => ev.filter(e => e.kind === k).length;
 document.getElementById("stats").innerHTML = [["sim", "simulator runs"], ["lab", "lab experiments"], ["write", "files written"],
   ["verified", "promoted"], ["rejected", "not significant"]].map(([k, n]) => `<div class="stat"><b>${count(k)}</b><span>${n}</span></div>`).join("");
-document.getElementById("sub").textContent += ` Built ${DATA.generated}.`;
+document.getElementById("sub").textContent += ` Library ${DATA.library_version}, built ${DATA.generated}.`;
 
 // filters
 const filters = document.getElementById("filters");

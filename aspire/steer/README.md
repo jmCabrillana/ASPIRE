@@ -78,6 +78,7 @@ equal-budget LoRA baseline for sample efficiency.
 | `prompts/explorer.md`, `prompts/agent.md` | agent instructions |
 | `library/` | `steerlib/` (code + README index), `directions/`, `adapters/`, `programs/`, `tools/`, `notes/` (JOURNAL.md), `INDEX.md`, `LITERATURE.md`, `LITERATURE_REVIEW.md` |
 | `doc/` | design document |
+| `reports/activity/` | activity logbook: `activity_<library version>.html` (one per version) and `latest.html`, built by `scripts/activity.py` |
 | `outputs/` | results (gitignored) |
 
 ## Quick start
