@@ -1,0 +1,16 @@
+{
+ "where": "both",
+ "rank": 8,
+ "targets": [
+  "q_proj",
+  "v_proj"
+ ],
+ "steps": 300,
+ "episodes": [
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_0.npz"
+ ],
+ "n_success_episodes": 1,
+ "n_chunks": 11,
+ "final_loss": 0.139129323232919,
+ "source": "self-generated carry_handback2 successes (state un-shifted)"
+}

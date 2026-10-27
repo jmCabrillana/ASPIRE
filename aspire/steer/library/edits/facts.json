@@ -1,0 +1,78 @@
+{
+ "place_put_from_goal9": {
+  "layer": 1,
+  "source": [
+   "libero_goal_lan",
+   9
+  ],
+  "x": "place the wine bottle on the rack",
+  "c": "put the wine bottle on the rack",
+  "trigger_tokens": [
+   "place"
+  ],
+  "n_sentences": 1,
+  "n_observations": 2,
+  "obs_files": [
+   "outputs/programs/none/libero_goal_lan__7/episode_0.npz",
+   "outputs/programs/none/libero_goal_lan__7/episode_1.npz"
+  ],
+  "norm": 23.333253860473633
+ },
+ "place_put_from_goal1": {
+  "layer": 1,
+  "source": [
+   "libero_goal_lan",
+   1
+  ],
+  "x": "place the bowl on the stove",
+  "c": "put the bowl on the stove",
+  "trigger_tokens": [
+   "place"
+  ],
+  "n_sentences": 1,
+  "n_observations": 2,
+  "obs_files": [
+   "outputs/programs/none/libero_goal_lan__7/episode_0.npz",
+   "outputs/programs/none/libero_goal_lan__7/episode_1.npz"
+  ],
+  "norm": 23.272987365722656
+ },
+ "switch_turn_from_goal7": {
+  "layer": 1,
+  "source": [
+   "libero_goal_lan",
+   7
+  ],
+  "x": "switch on the stove",
+  "c": "turn on the stove",
+  "trigger_tokens": [
+   "switch"
+  ],
+  "n_sentences": 1,
+  "n_observations": 2,
+  "obs_files": [
+   "outputs/programs/none/libero_goal_lan__7/episode_0.npz",
+   "outputs/programs/none/libero_goal_lan__7/episode_1.npz"
+  ],
+  "norm": 20.46767807006836
+ },
+ "set_put_from_fresh0": {
+  "layer": 1,
+  "source": [
+   "libero_goal",
+   1
+  ],
+  "x": "set the bowl down on the stove",
+  "c": "put the bowl down on the stove",
+  "trigger_tokens": [
+   "set"
+  ],
+  "n_sentences": 1,
+  "n_observations": 2,
+  "obs_files": [
+   "outputs/programs/none/libero_goal__1/episode_0.npz",
+   "outputs/programs/none/libero_goal__1/episode_1.npz"
+  ],
+  "norm": 23.673376083374023
+ }
+}

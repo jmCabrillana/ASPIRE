@@ -1,0 +1,25 @@
+{
+ "where": "both",
+ "rank": 8,
+ "targets": [
+  "q_proj",
+  "v_proj"
+ ],
+ "steps": 1500,
+ "episodes": [
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_0.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_1.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_2.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_3.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_4.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_5.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_6.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_7.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_8.npz",
+  "outputs/programs/carry_handback2/libero_spatial_swap__4/episode_9.npz"
+ ],
+ "n_success_episodes": 7,
+ "n_chunks": 82,
+ "final_loss": 0.1544760385528207,
+ "source": "self-generated carry_handback2 successes (state un-shifted)"
+}

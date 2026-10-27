@@ -1,0 +1,24 @@
+{
+ "where": "vlm",
+ "rank": 8,
+ "targets": [
+  "q_proj",
+  "v_proj"
+ ],
+ "steps": 300,
+ "episodes": [
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_0.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_1.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_2.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_3.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_4.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_5.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_6.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_7.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_8.npz",
+  "outputs/programs/canon_v7/libero_spatial_lan__0/episode_9.npz"
+ ],
+ "n_success_episodes": 3,
+ "n_chunks": 7,
+ "final_loss": 0.06843983996659517
+}

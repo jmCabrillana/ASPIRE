@@ -1,0 +1,15 @@
+{
+ "where": "vlm",
+ "rank": 8,
+ "targets": [
+  "q_proj",
+  "v_proj"
+ ],
+ "steps": 60,
+ "episodes": [
+  "outputs/programs/canon_v6/libero_spatial_lan__1/episode_0.npz"
+ ],
+ "n_success_episodes": 1,
+ "n_chunks": 3,
+ "final_loss": 0.3010139930061996
+}
