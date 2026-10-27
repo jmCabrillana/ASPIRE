@@ -1,0 +1,239 @@
+<title>Steering Agent Logbook</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an instrument logbook. Activity lanes run left to right in time; the library band below shows, in parallel, when
+   each entry appeared and every moment it was used. Detail opens beside the plot (below it on phones). */
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1c2421; --muted: #5d6863; --rule: #d9ddd6; --band: #e9ece6;
+  --sim: #2f6fb0; --lab: #7b4bb3; --write: #6b7a73; --train: #c27a12; --verify: #158a8a; --ok: #2e8b4a; --bad: #9aa29d;
+  --finding: #b8336a; --version: #1c2421; --use: #c27a12;
+  --display: 'Archivo', 'Helvetica Neue', Arial, sans-serif; --body: 'IBM Plex Sans', 'Segoe UI', Arial, sans-serif;
+  --mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #141a18; --panel: #1b2220; --ink: #e6ebe7; --muted: #9aa69f; --rule: #2e3834; --band: #1f2826;
+  --sim: #6aa6e6; --lab: #b48ae6; --write: #94a39b; --train: #e6a54a; --verify: #4cc4c4; --ok: #5cc27a; --bad: #66706b;
+  --finding: #e5679b; --version: #e6ebe7; --use: #e6a54a; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #141a18; --panel: #1b2220; --ink: #e6ebe7; --muted: #9aa69f; --rule: #2e3834; --band: #1f2826;
+  --sim: #6aa6e6; --lab: #b48ae6; --write: #94a39b; --train: #e6a54a; --verify: #4cc4c4; --ok: #5cc27a; --bad: #66706b;
+  --finding: #e5679b; --version: #e6ebe7; --use: #e6a54a; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 1600px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 28px; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 14px; margin: 0; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 28px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.stat b { font-size: 22px; font-weight: 500; display: block; } .stat span { color: var(--muted); font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  border-radius: 999px; padding: 4px 10px; font: 13px var(--body); cursor: pointer; }
+.chip[aria-pressed="false"] { opacity: 0.45; } .chip:focus-visible, button:focus-visible { outline: 2px solid var(--sim); outline-offset: 2px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+button.ghost { border: 1px solid var(--rule); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 4px 10px; font: 13px var(--body); cursor: pointer; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 980px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.plot { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; min-width: 0; }
+.plot svg { display: block; width: 100%; touch-action: none; cursor: grab; } .plot svg:active { cursor: grabbing; }
+.hint { color: var(--muted); font-size: 12px; padding: 6px 12px; border-top: 1px solid var(--rule); }
+aside.detail { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+aside.detail h2 { font-family: var(--display); font-size: 18px; margin: 0; line-height: 1.3; text-wrap: balance; }
+.meta { font-family: var(--mono); font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.pill { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; color: var(--panel); }
+pre { background: var(--band); border-radius: 6px; padding: 10px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-word;
+  max-height: 280px; overflow: auto; margin: 0; }
+.uses { display: flex; flex-wrap: wrap; gap: 6px; } .uses .chip { font-family: var(--mono); font-size: 12px; }
+.lbl { font-family: var(--mono); font-size: 11px; fill: var(--muted); } .lane-name { font-family: var(--display); font-size: 12px; font-weight: 500; fill: var(--ink); }
+.ev-label { font-family: var(--body); font-size: 11px; fill: var(--ink); pointer-events: none; }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); font: 12px var(--body); padding: 6px 8px; border-radius: 4px; max-width: 320px; z-index: 5; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div><h1>Steering Agent Logbook</h1><p class="sub" id="sub">Everything the research agent ran, wrote and verified, with the library it built and used.</p></div>
+    <div class="stats" id="stats"></div>
+  </header>
+  <div class="controls" id="filters"></div>
+  <div class="controls">
+    <button class="ghost" id="reset">Show all</button>
+    <span id="sessionButtons" class="controls"></span>
+  </div>
+  <div class="main">
+    <div class="plot"><svg id="plot" role="img" aria-label="Timeline of the agent's activity by research thread, with library entries below"></svg>
+      <div class="hint">Scroll or pinch to zoom, drag to pan. Labels appear as you zoom in. Click a mark for details; click a library entry to see where it is used.</div></div>
+    <aside class="detail" id="detail"><h2>Select an event</h2><p class="sub">Simulator runs, lab experiments, code, adapter training and held-out verifications appear in the lanes. The band below lists library entries: a line starts when the entry was added, and a mark shows each run that used it.</p></aside>
+  </div>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+const DATA = /*DATA*/null;
+const KINDS = {
+  sim: ["Simulator run", "--sim"], lab: ["Offline lab", "--lab"], script: ["Script", "--lab"], write: ["Code written", "--write"],
+  train: ["Adapter training", "--train"], verify: ["Verification request", "--verify"], verified: ["Promoted", "--ok"],
+  rejected: ["Not significant", "--bad"], finding: ["Experiment write-up", "--finding"], version: ["Library version", "--version"],
+  inspect: ["Inspection", "--write"]
+};
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const shown = new Set(Object.keys(KINDS).filter(k => k !== "inspect"));
+const ev = DATA.events.map((e, i) => ({...e, i, d0: new Date(e.t * 1000), d1: new Date(e.end * 1000)}));
+const lanes = DATA.lanes;
+const usedItems = [...new Set(ev.flatMap(e => e.uses || []))].sort();
+const fmt = d3.timeFormat("%b %d %H:%M");
+
+// stats
+const count = k => ev.filter(e => e.kind === k).length;
+document.getElementById("stats").innerHTML = [["sim", "simulator runs"], ["lab", "lab experiments"], ["write", "files written"],
+  ["verified", "promoted"], ["rejected", "not significant"]].map(([k, n]) => `<div class="stat"><b>${count(k)}</b><span>${n}</span></div>`).join("");
+document.getElementById("sub").textContent += ` Built ${DATA.generated}.`;
+
+// filters
+const filters = document.getElementById("filters");
+Object.entries(KINDS).forEach(([k, [name, col]]) => {
+  const b = document.createElement("button"); b.className = "chip"; b.id = "f-" + k; b.setAttribute("aria-pressed", shown.has(k));
+  b.innerHTML = `<span class="dot" style="background:var(${col})"></span>${name}`;
+  b.onclick = () => { shown.has(k) ? shown.delete(k) : shown.add(k); b.setAttribute("aria-pressed", shown.has(k)); draw(); };
+  filters.appendChild(b);
+});
+
+// geometry
+const svg = d3.select("#plot"), LEFT = 150, TOP = 26, LANE = 64, ITEM = 18, GAP = 30;
+const libTop = TOP + lanes.length * LANE + GAP;
+const H = libTop + 22 + usedItems.length * ITEM + 16;
+let W = 1000;
+const x0 = d3.scaleTime().domain(d3.extent(ev.flatMap(e => [e.d0, e.d1]))).nice();
+let x = x0.copy();
+const laneY = Object.fromEntries(lanes.map((l, i) => [l.key, TOP + i * LANE + LANE / 2]));
+const itemY = Object.fromEntries(usedItems.map((u, i) => [u, libTop + 22 + i * ITEM + ITEM / 2]));
+let selected = null, selectedItem = null;
+const tip = document.getElementById("tip");
+
+const gBack = svg.append("g"), gAxis = svg.append("g"), gMarks = svg.append("g"), gLib = svg.append("g"), gFront = svg.append("g");
+const zoom = d3.zoom().scaleExtent([1, 4000]).on("zoom", ({transform}) => { x = transform.rescaleX(x0); draw(); });
+svg.call(zoom);
+
+function resize() {
+  W = Math.max(360, document.querySelector(".plot").clientWidth);
+  svg.attr("viewBox", `0 0 ${W} ${H}`).attr("height", H);
+  x0.range([LEFT, W - 16]); x = d3.zoomTransform(svg.node()).rescaleX(x0);
+  zoom.extent([[LEFT, 0], [W - 16, H]]).translateExtent([[LEFT, 0], [W - 16, H]]);
+  draw();
+}
+
+function draw() {
+  const [a, b] = x.range();
+  gBack.selectAll("*").remove(); gAxis.selectAll("*").remove(); gMarks.selectAll("*").remove(); gLib.selectAll("*").remove(); gFront.selectAll("*").remove();
+  // sessions
+  DATA.sessions.forEach(s => {
+    const x1 = Math.max(a, x(new Date(s.start * 1000))), x2 = Math.min(b, x(new Date(s.end * 1000)));
+    if (x2 > x1) gBack.append("rect").attr("x", x1).attr("y", TOP - 6).attr("width", x2 - x1).attr("height", H - TOP).attr("fill", css("--band"));
+  });
+  // lanes
+  lanes.forEach((l, i) => {
+    const y = TOP + i * LANE;
+    gBack.append("line").attr("x1", 0).attr("x2", W).attr("y1", y + LANE).attr("y2", y + LANE).attr("stroke", css("--rule"));
+    gFront.append("rect").attr("x", 0).attr("y", y).attr("width", LEFT - 8).attr("height", LANE).attr("fill", css("--panel"));
+    gFront.append("text").attr("class", "lane-name").attr("x", 12).attr("y", y + LANE / 2 + 4).text(l.name);
+  });
+  gFront.append("rect").attr("x", 0).attr("y", libTop - 4).attr("width", LEFT - 8).attr("height", H - libTop).attr("fill", css("--panel"));
+  gFront.append("text").attr("class", "lane-name").attr("x", 12).attr("y", libTop + 12).text("Library entries used");
+  // axis
+  const ax = d3.axisTop(x).ticks(Math.max(3, Math.floor((b - a) / 120))).tickSizeOuter(0);
+  gAxis.attr("transform", `translate(0,${TOP - 6})`).call(ax).call(g => g.selectAll("text").attr("class", "lbl")).call(g => g.selectAll("path,line").attr("stroke", css("--rule")));
+  // library versions as ticks across the library band
+  ev.filter(e => e.kind === "version" && shown.has("version")).forEach(e => {
+    const px = x(e.d0); if (px < a || px > b) return;
+    gLib.append("line").attr("x1", px).attr("x2", px).attr("y1", libTop).attr("y2", libTop + 14).attr("stroke", css("--version")).attr("stroke-width", 1.5)
+      .style("cursor", "pointer").on("click", () => select(e)).on("mousemove", m => showTip(m, e)).on("mouseleave", hideTip);
+  });
+  // library items: a line from introduction, marks where used
+  usedItems.forEach(u => {
+    const y = itemY[u], info = (DATA.items || {})[u];
+    const start = info ? new Date(info.t * 1000) : x.domain()[0];
+    const hl = selectedItem === u || (selected && (selected.uses || []).includes(u));
+    gLib.append("line").attr("x1", Math.max(a, x(start))).attr("x2", b).attr("y1", y).attr("y2", y)
+      .attr("stroke", hl ? css("--use") : css("--rule")).attr("stroke-width", hl ? 3 : 2);
+    if (info && x(start) >= a) gLib.append("circle").attr("cx", x(start)).attr("cy", y).attr("r", 4).attr("fill", css("--version"));
+    gFront.append("text").attr("class", "lbl").attr("x", 12).attr("y", y + 4).text(u.replace(/^steerlib\//, "").slice(0, 22))
+      .style("cursor", "pointer").style("fill", hl ? css("--use") : css("--muted")).on("click", () => { selectedItem = selectedItem === u ? null : u; draw(); });
+  });
+  ev.filter(e => e.uses && shown.has(e.kind)).forEach(e => e.uses.forEach(u => {
+    if (!(u in itemY)) return; const px = x(e.d0); if (px < a || px > b) return;
+    gLib.append("rect").attr("x", px - 2).attr("y", itemY[u] - 5).attr("width", 4).attr("height", 10).attr("fill", css(e.kind === "verified" ? "--ok" : "--use"))
+      .style("cursor", "pointer").on("click", () => select(e)).on("mousemove", m => showTip(m, e)).on("mouseleave", hideTip);
+  }));
+  // events in lanes
+  const visible = ev.filter(e => shown.has(e.kind) && e.kind !== "version" && x(e.d1) >= a && x(e.d0) <= b);
+  const lastLabelEnd = {};
+  visible.forEach(e => {
+    const y = laneY[e.lane] ?? laneY.library, px = x(e.d0), w = Math.max(0, x(e.d1) - px), col = css(KINDS[e.kind][1]);
+    const offset = {verified: -18, rejected: -18, finding: 18, verify: -8, sim: 0, train: 8, lab: 8, script: 8, write: -8, inspect: 14}[e.kind] || 0;
+    const yy = y + offset, sel = selected && selected.i === e.i;
+    let m;
+    if (e.kind === "verified" || e.kind === "rejected") {
+      m = gMarks.append("path").attr("d", d3.symbol(d3.symbolDiamond, sel ? 160 : 90)()).attr("transform", `translate(${px},${yy})`)
+        .attr("fill", e.kind === "verified" ? col : css("--panel")).attr("stroke", col).attr("stroke-width", 1.5);
+    } else if (e.kind === "finding") {
+      m = gMarks.append("path").attr("d", d3.symbol(d3.symbolStar, sel ? 140 : 70)()).attr("transform", `translate(${px},${yy})`).attr("fill", col);
+    } else if (w > 3) {
+      m = gMarks.append("rect").attr("x", px).attr("y", yy - 4).attr("width", w).attr("height", 8).attr("rx", 2).attr("fill", col).attr("opacity", e.kind === "inspect" ? 0.4 : 0.85);
+    } else {
+      m = gMarks.append("circle").attr("cx", px).attr("cy", yy).attr("r", e.kind === "inspect" ? 2 : 3.5).attr("fill", col).attr("opacity", e.kind === "inspect" ? 0.5 : 0.9);
+    }
+    if (sel) m.attr("stroke", css("--ink")).attr("stroke-width", 2);
+    m.style("cursor", "pointer").on("click", () => select(e)).on("mousemove", ev_ => showTip(ev_, e)).on("mouseleave", hideTip);
+    // labels when there is room
+    const key = e.lane + offset, label = e.title || "";
+    const room = (lastLabelEnd[key] ?? -1e9) < px - 4;
+    if (room && ["sim", "verified", "rejected", "finding", "train", "lab"].includes(e.kind)) {
+      const t = label.length > 46 ? label.slice(0, 45) + "…" : label;
+      const est = t.length * 5.6;
+      const next = visible.find(o => o.lane === e.lane && o.i > e.i && x(o.d0) > px + 2);
+      if (!next || x(next.d0) - px > Math.min(est, 140) || est < 60) {
+        gMarks.append("text").attr("class", "ev-label").attr("x", px + 6).attr("y", yy + (offset < 0 ? -6 : 14)).text(t);
+        lastLabelEnd[key] = px + est;
+      }
+    }
+  });
+}
+
+function showTip(m, e) {
+  tip.hidden = false; tip.textContent = `${fmt(e.d0)} · ${KINDS[e.kind][0]} · ${e.title}`;
+  tip.style.left = Math.min(m.clientX + 12, innerWidth - 340) + "px"; tip.style.top = (m.clientY + 12) + "px";
+}
+function hideTip() { tip.hidden = true; }
+
+function esc(s) { return String(s ?? "").replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c])); }
+function select(e) {
+  selected = e; selectedItem = null; draw();
+  const dur = Math.round(e.end - e.t), lane = (lanes.find(l => l.key === e.lane) || {}).name || e.lane;
+  const extra = e.kind === "sim" && e.success !== undefined ? `<div class="meta"><span>program ${esc(e.program)}</span><span>${esc(e.suite)} ${esc(e.task)}</span><span>episodes ${esc(e.episodes)}</span><span>success ${e.success.toFixed(2)}</span></div>`
+    : e.steered !== undefined ? `<div class="meta"><span>frozen ${e.frozen}/${e.n}</span><span>program ${e.steered}/${e.n}</span></div>` : "";
+  const uses = (e.uses || []).length ? `<div><div class="meta">library entries used</div><div class="uses">${e.uses.map(u => {
+      const info = (DATA.items || {})[u]; return `<button class="chip" data-u="${esc(u)}">${esc(u)}${info ? " · " + info.version : ""}</button>`; }).join("")}</div></div>` : "";
+  document.getElementById("detail").innerHTML = `<span class="pill" style="background:var(${KINDS[e.kind][1]});align-self:flex-start">${KINDS[e.kind][0]}</span>
+    <h2>${esc(e.title)}</h2><div class="meta"><span>${fmt(e.d0)}</span>${dur > 1 ? `<span>${dur} s</span>` : ""}<span>${esc(lane)}</span>${e.session ? `<span>session ${esc(e.session)}</span>` : ""}</div>
+    ${extra}${uses}${e.cmd ? `<div><div class="meta">${e.kind === "finding" ? "script" : "command or file"}</div><pre>${esc(e.cmd)}</pre></div>` : ""}
+    ${e.out ? `<div><div class="meta">${e.kind === "finding" ? "journal entry" : "output (start)"}</div><pre>${esc(e.out)}</pre></div>` : ""}`;
+  document.querySelectorAll("#detail [data-u]").forEach(b => b.onclick = () => { selectedItem = b.dataset.u; draw(); });
+}
+
+// session buttons
+DATA.sessions.forEach((s, i) => {
+  const b = document.createElement("button"); b.className = "ghost"; b.id = "s-" + i;
+  b.textContent = `Session ${i + 1} · ${d3.timeFormat("%b %d %H:%M")(new Date(s.start * 1000))}`;
+  b.onclick = () => {
+    const x1 = x0(new Date(s.start * 1000)), x2 = x0(new Date(s.end * 1000)), [a, bb] = x0.range();
+    const k = (bb - a) / Math.max(1, x2 - x1);
+    svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity.translate(a - x1 * k, 0).scale(k));
+  };
+  document.getElementById("sessionButtons").appendChild(b);
+});
+document.getElementById("reset").onclick = () => svg.transition().duration(400).call(zoom.transform, d3.zoomIdentity);
+addEventListener("resize", resize);
+resize();
+</script>
