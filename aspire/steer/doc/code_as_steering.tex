@@ -147,7 +147,7 @@ attention function (\texttt{ctx.patch}), rewrite the instruction (\texttt{ctx.in
 \item \texttt{on\_step(t, obs, action, ctx)} every control step: replace the action;
 \item \texttt{on\_end(result, ctx)}: undo in-place edits.
 \end{itemize}
-\texttt{ctx.vla}, \texttt{ctx.vlm\_layers} and \texttt{ctx.expert\_layers} give the model, \texttt{ctx.log(key, value)} writes
+A program may also load a whole \emph{composite} model for the episode: any saved combination of weight deltas (edits, transplants from the base model, merged adapters), adapters and steering vectors (\texttt{steer/composite.py}). \texttt{ctx.vla}, \texttt{ctx.vlm\_layers} and \texttt{ctx.expert\_layers} give the model, \texttt{ctx.log(key, value)} writes
 arbitrary values into the episode trace, \texttt{ctx.memory} keeps state within the episode. The only hard constraints:
 no simulator ground truth (object poses, simulator state), and the frozen weights must be identical after each episode
 (checked by the evaluator; adapters are allowed as separate modules loaded and removed by the program).

@@ -46,6 +46,8 @@ class Context:
     ctx.instruction  the instruction given to the VLA; a program may rewrite it
     ctx.log(key, value)   anything JSON-serialisable (tensors are converted); stored in the episode trace
     ctx.memory       a dict kept for the episode;  ctx.task: suite, task_id, instruction (no benchmark task name)
+    A program may also load a whole composite ("Frankenstein") model for the episode: any saved combination of weight deltas,
+    transplants, adapters and steering vectors (steer/composite.py, library/composites/).
     Anything may be changed during the episode (weights, model code, inputs, outputs); everything is restored afterwards, and the
     evaluator checks the weights are back to the frozen ones (edits made outside edit_weights must be undone in on_end).
     """

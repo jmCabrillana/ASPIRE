@@ -61,6 +61,9 @@ library/programs/examples/open_example.py):
   heads, rank-one edits, interpolations with an adapter, ...), extensive multi-site steering, input edits (images, instruction,
   state), output edits (actions, chunk resampling, best-of-N). Everything is restored after the episode and the weights are
   checked; that is the only constraint besides the rules below.
+  Programs may also load a whole COMPOSITE ("Frankenstein") model for the episode: any saved combination of weight deltas (edits,
+  transplants from the base SmolVLM2, merged adapters), adapters and steering vectors (steer/composite.py: Composite.capture
+  diffs an edited model against the frozen weights, save/load in library/composites/, apply(ctx) in setup; all undone after).
 
 SIDE EXPERIMENTS ARE WELCOME when they help understanding: toy probes without the simulator (text-only prefixes, dummy or
 synthetic images, controlled image edits such as moving, recolouring or pasting objects, instruction variants), small scripts that
