@@ -25,3 +25,16 @@ PAPER TARGETS (what the results must eventually show; design experiments so each
    new pairings of objects and destinations); the reserved suites will be the final test, so prepare general entries.
 4. Improvement over time without fine-tuning: keep a fixed panel of development tasks and record, per library version, how the
    entry program (programs/candidates/auto.py) does on it, so the curve "library version -> success" can be drawn.
+
+DISCOVERY METHODS (the method of discovery may be the main contribution; unconventional ideas are welcome, e.g.):
+- Minimal sufficient intervention: optimise the smallest (sparse, L1) set of neurons or the lowest-rank change that turns a failing
+  chunk into a successful one (optimize_vector + sparsity); the support of the solution IS the discovered lever.
+- Control view: treat the residual stream as a control input; estimate the Jacobian d(action chunk)/d(activation) per layer and its
+  top singular vectors = the directions the policy is most sensitive to (a steering basis); closed-loop controllers on internal
+  state estimated by probes (feedback, not open-loop pushes).
+- Model diffing: compare the fine-tuned VLM with base SmolVLM2 (which still knows English) to locate what fine-tuning changed, and
+  transplant base-model representations or weights where needed (restore lost knowledge instead of re-teaching it).
+- Quality-diversity / LLM-guided evolution of programs (MAP-Elites over intervention behaviours, FunSearch-style program evolution
+  with the library as the genome) to find many different levers, not one.
+- Features: sparse autoencoders trained on our own rollout activations to find cleaner features than neurons, then steer features.
+- Automated science: generate hypotheses from failure frames and traces, test the cheapest discriminating experiment first.
