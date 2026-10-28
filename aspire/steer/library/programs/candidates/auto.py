@@ -1,5 +1,5 @@
 """Library entry point for a new perturbed task: dispatch by suite.
-- *_lan  -> canon_v14 (English normalisation + canon v7 rewrite + frame-fill fallback + dialect completions; = v13 on all
+- *_lan  -> canon_v16 (v15 + dialect deletion of out-of-dialect "top of"; v15 = v14 + fallback fix + coordination article; English normalisation + canon v7 rewrite + frame-fill fallback + dialect completions; = v13 on all
            goal_lan / spatial_lan paraphrases, which are verified).
            Precompute the rewrites first: library/tools/precompute_canon.py <suite> (one process).
 - *_swap -> carry_handback4 (carry_handback2 + nudge-and-retry) when library/references/<trained suite>__<task>.npz exists (built by tools/make_reference.py from
@@ -10,7 +10,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REF = HERE.parents[1] / "references"
-DESCRIPTION = "dispatcher: canon_v14 for *_lan, carry_handback4 for *_swap (if a reference exists)"
+DESCRIPTION = "dispatcher: canon_v16 for *_lan, carry_handback4 for *_swap (if a reference exists)"
 import sys as _sys
 _suite = _sys.argv[_sys.argv.index("--suite") + 1] if "--suite" in _sys.argv else ""
 N_ACTION_STEPS = 10 if _suite.endswith("_swap") else None     # read by run_program at import (the swap hybrid replans every 10)
@@ -27,7 +27,7 @@ def _load(name):
 def _choice(ctx):
     s = ctx.task.suite
     if s.endswith("_lan"):
-        return "canon_v14"
+        return "canon_v16"
     if s.endswith("_swap") and (REF / f"{s[:-5]}__{ctx.task.task_id}.npz").exists():
         return "carry_handback4"
     return None

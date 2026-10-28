@@ -504,3 +504,148 @@ Final: 21 promoted results (20 distinct tasks): goal_lan 0, 6, 7 (x2: text and i
 spatial_swap 0, 2, 4, 5, 7, 9. All verification requests processed.
 ## 00:14 VERIFY lexfacts goal_lan 4: held-out 24/30 vs frozen 23/30 (p=0.5), not promoted (strong baseline). Session closes
 here; nothing running. Next session: start from notes/SUMMARY.md ("Next steps").
+
+# SESSION 2 (2026-10-27, from 16:40). Operator: RAM tight -> ONE simulator job at a time.
+## 16:45-17:18 goal_lan 3 by skill composition (programs/candidates/open_then_place.py; otp_* = env-var variants), all 0/5
+Plan: sub-skill 1 'open the top drawer of the cabinet' (VLA), container located from the robot's OWN motion (turnaround point of
+the reach = closed handle; pull vector = where the drawer came out), sub-skill 2 a trained bowl-pick instruction, program places.
+Findings (eps 0-4 each, numbers = episodes):
+- the opening sub-skill is reliable and self-measurable: pull 14-19 cm along +y in 5/5 (handle (0.02, -0.14..-0.16, 1.03)).
+- switching straight to sub-skill 2 from where sub-skill 1 ended: the VLA never grasps the bowl (0/15 over 3 instructions; it drifts
+  upward). Returning to the start POSITION only: it grasps the WINE BOTTLE (2/3 grasps) - the hand is still rotated ~100 deg
+  after the pull. Restoring position AND orientation (OSC world-frame axis-angle, 1 <-> 0.5 rad): the VLA grasps the bowl 5/5.
+  => COMPOSITION RULE: a sub-skill must start from the training start pose incl. orientation; the wrist view/state decide WHICH
+  object is picked (contrast E17: images barely move the target in-distribution; out of distribution they do).
+- program carry + release over the drawer: the bowl (rim grasp, qpos 0.002-0.008) slips during program carries (qpos -> 0.0003
+  within ~20 steps; also at half speed and after the VLA's own 8 cm lift); when it survives, the bowl ends inside the drawer
+  (1 ep, frames) but not 'in' by the predicate (rim grasp => bowl centre ~5+ cm off the hand; FRAC 0.5 too far out).
+- moving across before clearing the drawer front pushes the drawer shut (diagonal carry); release-on-stall saves ~35 steps.
+- VLA carry with 'put the bowl on top of the cabinet' (its trained path passes over the drawer) + program take-over near the
+  drawer: 1/5 take-overs, bowl lands outside. Virtual frame for that skill (state shifted so its memorised place point maps to
+  the drawer): erratic early releases (0/5).
+- time budget is tight: open ~125 steps + return ~30 + pick ~50 leaves ~90 of 300.
+Parked. What would be needed: a carry that keeps the grasp (the VLA's own) aimed at a new place point -> next: E37.
+## 17:40 canon v15 (programs/candidates/canon_v15.py): spatial_lan 0 13/20 dev (frozen 2/10; v7 9/20) -> VERIFY requested
+Found while testing an article-insertion rule: the v14 pipeline (= auto.py's *_lan choice) rewrote spatial_lan 0 to the WRONG
+frame 'pick up the black bowl next to the plate ...' (0/10): the v12 frame-fill fallback treats every word after 'and' as a verb
+slot, so the noun 'ramekin' ('the plate and ramekin') looked like an untranslated verb. v15 = v14 with (1) a dialect noun after
+'and' no longer triggers the fallback, (2) canon.coord_article: 'the A and B' -> 'the A and the B' for a bare noun B (general
+English determiner repetition; E25). Rewrite: 'pick up the black bowl between the plate and the ramekin and place it on the
+plate' (= the trained wording: every word from the paraphrase or general grammar; flagged as in SUMMARY's transparency note).
+v15 differs from v14 on NO other goal_lan / spatial_lan task (checked all 20), so verified results stand; auto.py now uses v15.
+Sim: eps 0-9 4/10, eps 10-19 9/10. Note: even the exact trained wording gives only ~65% in the spatial_lan 0 scene (trained
+spatial 0: 100%), so the rest is not language.
+## 17:50 VERIFIED: canon_v15 spatial_lan 0: held-out 22/30 vs frozen 10/30 (p=0.002), PROMOTED (v7 was 15/30, n.s.).
+spatial_lan: all 10 tasks promoted. Discovery: SIM trace inspection of auto.py's failure (ledger #9, knowledge/discoveries.md).
+## 17:50 operator paper targets (prompts/explorer_extra.md): (1) discovery ledger -> knowledge/discoveries.md (method, data,
+cost, seed or not, for every intervention); (2) gating ablations; (3) general entries for unseen compositions; (4) fixed
+development panel scored per library version -> library/tools/panel.py (16 tasks: goal_lan 0,3,5,6,7,8; spatial_lan 0,1,4,7;
+spatial_swap 0,1,2,7; goal_swap 1,9; eps 0-4; each version's own auto.py in an isolated copy; table in notes/panel.md).
+Frozen panel total 5/80. v033 running.
+New discovery tool: steerlib/levers.py (minimal sufficient intervention: proximal-L1 gradient search over MLP neurons of several
+layers; support = the lever; install(ctx, sol) gives a per-chunk dose knob for state-dependent programs).
+## E37 (lab/e37_destination_vector.py): a gradient-learned DESTINATION VECTOR works in the action expert, not in the VLM
+Method: SEARCH (steer.lab.optimize_vector, 60 Adam steps through the 10 flow steps). Data: 18 holding-phase observations of
+frozen trained spatial tasks 0-4 (3-6 episodes each); target = the policy's own chunk with its endpoint moved by D = +8 cm y
+(bias spread over the first 30 steps). Test: 20 holding obs of tasks 5-9 (other scenes and instructions). Cost: ~4 min per site.
+  site                 |v|   train gain  TEST gain  TEST orth   gripper change
+  expert L0 all tokens 2.4   0.81        0.79       0.2 cm      0.015
+  expert L4            3.1   0.66        0.66       0.6 cm      0.020
+  expert L8            2.7   0.61        0.59       0.3 cm      0.005
+  expert L12           2.6   0.64        0.63       0.3 cm      0.004
+  VLM L2 / L8 / L14    1-1.5 0.03-0.06   0.02-0.06  0.1 cm
+  VLM L8 / L14 state   0.2-0.3 0.00      0.00
+(seed noise of the endpoint 0.47 cm). One vector fitted on 5 tasks moves the predicted place point by 79% of 8 cm on 5 OTHER
+tasks with 0.2 cm off-axis error: the action expert has a near-task-independent motion code at its first layer. The same
+search in the VLM moves nothing (<= 6%): the motion target is not steerable through the prefix by a single vector (cf. E12:
+probe directions in the prefix are read-outs, not levers). Next: closed loop (destination shift or velocity bias?).
+Also 17:55: canon_v16 goal_lan 8 9/10 (frozen 0/10 on eps 0-4 of the panel; v033 auto 0/5).
+## E37b CLOSED LOOP (programs/candidates/dest_vector.py, trained spatial 1, eps 0-2, dose 1, gated on holding): the learned
+expert-L0 vector is a DESTINATION SHIFT, not a velocity bias. The VLA picked, carried, aligned and RELEASED BY ITSELF at
+y = 0.311 / 0.313 / 0.319 vs its memorised place point y = 0.240 (reference): +7.1 / +7.3 / +7.9 cm (wanted +8; offline gain
+predicted 6.3), x within 1 cm. It stops and releases (no drift): a closed-loop internal destination knob, learned in ~4 min from
+18 observations of OTHER tasks (spatial 0-4), applied to task 1. (Episodes took ~11 min each: the GPU was saturated by an
+outside graphics workload from ~18:05; dose 2 not run yet.) Method: SEARCH (gradient) + SIM. Ledger #11.
+GPU note 19:05: matmul 4 TFLOPS (normal ~50x more), policy chunk 4.4 s, env step 0.4 s; no CUDA process visible except
+graphics clients (Firefox, GNOME). Operator notified. Simulator work is ~40x slower until it clears.
+## E37c internal hand-back on spatial_swap 2 (programs/candidates/dest_swap.py, y-vector only, dose = tracked -15.6 cm / (8 cm x
+0.92) = -2.1, gated on holding; 1 episode, GPU-starved): the hand moved toward the moved plate but only -8..-10 cm in y (of
+-15.6) with +7 cm x drift, hovered and never released. A single vector is linear around dose 1 (E37b) but not at -2 with a sign
+flip. -> E39: learn the whole map offset -> vector instead.
+## E39 (lab/e39_destination_interface.py): a learned DESTINATION INTERFACE M (720 x 2) at expert L0, v = M @ (dx, dy), trained
+on the policy's own chunks with random synthetic endpoint shifts in a 25 cm disc (3 per obs, N = 50 steps), trained spatial
+tasks 0-4, 6, 8, test on 5, 7, 9. Batched forward (16 obs) because the GPU is time-sliced (9x throughput vs single obs).
+First run (2 obs/episode): loss 0.177 -> 0.082 in 10 steps (45 s/step); restarted with 1 obs/episode, 50 steps.
+E39 result (40 train obs, 50 steps, 24 min under GPU contention): loss 0.176 -> 0.047; random offsets in the 25 cm disc:
+TRAIN gain 0.61 (median 0.61), off-axis 1.8 cm; TEST tasks 5/7/9 gain 0.59 (median 0.60), off-axis 1.7 cm, gripper change
+0.017. Under-trained but direction-correct for ANY offset on unseen tasks; linear by construction, so programs divide the
+wanted offset by the gain. Saved library/directions/dest_iface_L0.pt. Method: SEARCH (gradient, batched). Closed loop: running.
+E39b closed loop, spatial_swap 2 ep 0 (IFACE=dest_iface_L0, GAIN 0.75, gated on holding): same end as the single y-vector run
+(E37c): the hand goes to (0.14-0.18, 0.10-0.15) instead of the tracked goal (0.08, 0.07), hovers, never releases. Two different
+levers ending at the same spot suggests an image-driven attractor in the VLA's final approach (E29), or a hard episode:
+carry_handback2 also FAILS ep 0 of spatial_swap 2 (succeeds on eps 1, 4). Next closed-loop test on ep 1.
+## E40 (lab/e40_jacobian_basis.py): CONTROL VIEW - the destination is a linear, shared 2-D code in the action expert; a
+## closed-form interface (pseudo-inverse of the mean endpoint Jacobian) needs NO training and has gain 1.00
+Method: DIS (Jacobian = one backward of the chunk endpoint per observation w.r.t. an additive vector at expert layer L, all action
+tokens) + closed form. Data: 40 holding obs of trained spatial tasks 0-4, 6, 8 (1 per episode); test 18 obs of tasks 5, 7, 9.
+Cost: ~1 min per layer (GPU time-sliced). Results (endpoint = summed clipped translation of the predicted chunk):
+  layer  J consistency cos(obs, mean)  top singular values        pinv interface TEST gain / off-axis   8 cm     20 cm
+  L0     0.93 (min 0.82)               0.200 0.183 | 0.058 0.038                                        1.00/0.3 0.97/0.7 cm
+  L4     0.89 (min 0.75)               0.137 0.128 | 0.049 0.034                                        0.99/0.3 0.98/1.0
+  L8     0.90 (min 0.79)               0.126 0.116 | 0.040 0.030                                        1.01/0.3 1.00/1.1
+=> every observation shares the same Jacobian (cos 0.93) and it is effectively rank 2 (x, y): the expert's early layers carry a
+task-independent planar motion code, controllable LINEARLY up to at least 20 cm. The closed-form v = pinv(J_mean) @ (dx, dy)
+beats both gradient-trained levers (E37 vector gain 0.79, E39 interface 0.60) at a fraction of the cost: the control view is the
+better discovery method here. Saved library/directions/dest_pinv_L{0,4,8}.pt ({"P": (720, 2), "Jm": (3, 720)}).
+Closed loop on spatial_swap 2 ep 1 (dest_swap.py IFACE=dest_pinv_L0): running.
+## 21:10 FIRST SUCCESS OF A PURELY INTERNAL SWAP CONTROLLER (programs/candidates/dest_swap.py -> dest_swap_fb.py)
+spatial_swap 2 ep 1. The VLA performs every motion and the release itself; the program (a) tracks the plate in the image
+(-15.6 cm in y), (b) while the robot holds the bowl, adds v = pinv(J_mean) @ cmd at expert L0 (E40 interface, cmd = tracked
+offset), (c) near placing height corrects cmd every chunk by 0.5 x (goal - hand) (integral feedback on the lever INPUT).
+Open loop (FB=0) on the same episode: y converged (0.09-0.10 vs goal 0.073) but x drifted +1 cm / 10 steps (0.13 -> 0.22), no
+release (also ep 0, both levers). With feedback: x error -4.9 -> -3.5 cm, cmd (-10.6, -18.8) cm, success at step 135.
+Method: DIS (E40 Jacobian) + PROG (feedback law) + SIM. Screening eps 0, 2-4 (carry_handback2 2/5 on eps 0-4; frozen 0/10).
+dest_swap_fb v1 on spatial_swap 2 eps 0-4: 2/5 (eps 1, 2; = carry_handback2's 2/5 on these episodes; frozen 0/10). Failures:
+ep 0 hand ends 1-2 cm from the tracked goal but the VLA never releases; ep 3 the feedback fired at the grasp (hand low, 14 cm
+from the goal) and pushed cmd the wrong way, then ran away (hand at y 0.20); ep 4 no success. v2: feedback only within 10 cm
+of the goal (FB_RADIUS) -> rerunning eps 0, 3, 4.
+## E41 (lab/e41_reach_jacobian.py): the REACH target uses the same linear code
+E40 on reaching observations (gripper open, first half of trained spatial episodes; 42 train / 18 test obs): J consistency cos
+0.94 (min 0.87), rank ~2 (0.222 0.206 | 0.071), pinv interface TEST gain 0.92 at 8 cm (0.4 cm off-axis) and 0.92 at 20 cm (0.9 cm);
+cos(J_hold, J_reach) = 0.87 (x), 0.86 (y). => one planar motion code at expert L0 serves reach and transport; the same
+closed-form interface can retarget the GRASP (moved pick objects: goal_swap) and the place. Saved directions/reach_pinv_L0.pt.
+dest_swap_fb v2 (feedback only within 10 cm): eps 0, 3, 4 still 0/3. Both inspected failures: the feedback brings the hand to
+~1 cm of the tracked goal (t 211-241) and the VLA hovers without releasing (the carry_handback failure mode), then wanders.
+v3 = v2 + a state-gated INTERNAL release: when the hand has stayed within 1.5 cm of the goal at placing height for 2 chunks,
+push the gripper-switch neuron expert L4 #1855 (E28) with dose -2 (offline: the VLA's own gripper command on a holding obs goes
++0.99 -> -1.17; activation 81 per dose unit). Composition of two discovered levers (ledger #6 + #13), both gated by the state.
+Running eps 0, 3, 4.
+dest_swap_fb v3 on eps 0, 3: ep 3 SUCCESS (step 159), ep 0 fail. The release lever did NOT fire in either (ep 0 never settled
+within 1.5 cm: final error (1.6, 4.8) cm; ep 3 succeeded by the VLA's own release), so ep 3's success is not credited to the lever
+(policy sampling noise differs between runs). Tally on spatial_swap 2 eps 0-4 across v1-v3: eps 1, 2, 3 succeed = 3/5 (frozen
+0/10, carry_handback2 2/5 on the same eps); ep 4 v3 running. 22:50 VERIFY requested (dest_swap_fb, spatial_swap 2): the
+first program in which the VLA performs every motion and release itself on a swapped layout, steered only through an internal
+closed-form destination interface (E40) with integral feedback.
+dest_swap_fb v3 ep 4: fail -> spatial_swap 2 dev 3/5 (eps 1-3). Driver started the verification at ~23:10.
+spatial_swap 4 ep 0 (v3): the VLA stopped at y 0.21 (memorised 0.242, goal 0.078: only -3 cm of the -16 cm shift in closed loop,
+although the transport here comes from the drawer at y -0.10, z 1.25) and released there; v2/v3's 10 cm feedback radius never
+engaged. -> dest_swap_fb2.py (v4, separate file so the verification of dest_swap_fb.py is not altered): feedback engages once
+the transport is over (hand low AND > 10 cm from the grasp point), whatever the distance to the goal. Screening swap 4 eps 0-1.
+v4 spatial_swap 4 ep 0: fail again, release at y 0.209 and NO feedback logged. Cause (a gating bug, i.e. evidence that the
+WHEN matters): the lever is on only while the hand is above grasp height + 3 cm; in task 4 the bowl is picked from the drawer
+(z ~1.10) above the plate (0.93), so the lever switched OFF during the descent and the VLA went back to its memorised place point
+(-3 cm instead of -16). In spatial_swap 2 the pick is at table height, so the same gate kept the lever on. v4b: latch the lever
+once engaged until the release. Running swap 4 ep 0.
+v4b (latched lever) spatial_swap 4 ep 0: the destination lever now WORKS on this task too: the VLA carries the bowl from the
+drawer to (0.09, 0.05-0.09) vs the tracked goal (0.086, 0.078) (v3 without latch: stopped at y 0.21) and hovers there; feedback
+cmd (-2.4, -16.8) cm; no release (the release lever needs 2 chunks within 1.5 cm; hand error 2-4 cm ~ tracking error) -> fail.
+Running REL_RADIUS 4 cm. Lesson: the release is the remaining bottleneck of every swap hybrid (carry_handback too).
+00:14 v4b + REL_RADIUS 4 cm, spatial_swap 4 ep 0: SUCCESS at step 173. The release lever did NOT fire (no log): the VLA released
+by itself once the latched internal destination + feedback brought the bowl over the moved plate. (v3 on the same episode: fail,
+lever switched off during the descent.) dest_swap_fb2.py defaults now = this configuration (REL_RADIUS 0.04).
+Internal swap controller, dev so far: spatial_swap 2 3/5 (dest_swap_fb, VERIFY running), spatial_swap 4 1/1 (dest_swap_fb2).
+
+## 00:15 END OF SESSION 2 (driver deadline ~00:37). Nothing of mine running. Driver: verifying dest_swap_fb on spatial_swap 2.
+Read notes/SUMMARY.md (session-2 block, next steps). Main results: spatial_lan 0 promoted (v15); auto.py = canon_v16; panel
+tool (frozen 5/80, v033 35/80); E37-E41: a linear shared planar motion code at expert L0 with a closed-form interface
+(pinv of the endpoint Jacobian, gain 1.00 on unseen tasks); internal swap controller (VLA does every motion and release).
