@@ -14,6 +14,8 @@
    `canon_v7.py`, then `canon_v12.py` (frame-fill fallback when a verb stays untranslated), then `canon_v13.py` (dialect
    noun-phrase completions: 'black bowl', 'drawer of the wooden cabinet'). Evidence: spatial_lan 1/5/6 held-out 22/30, 24/30,
    27/30 (v6); spatial_lan 7 14/20, 9 8/20 (v12), 4 6/10, 8 11/20 (v13) dev; goal_lan 0 held-out 26/30 (v5).
+4b. `canon_v16.py` (= auto.py's choice): v13 + English normalisation (v14) + noun-after-'and' fallback fix and coordination
+   article (v15: spatial_lan 0 held-out 22/30) + dialect deletion of out-of-dialect 'top of' (v16: goal_lan 8 9/10).
 5. Precompute the canon rewrite in ONE process before parallel simulator runs (Llama-2-7B per process = CUDA OOM).
 6. If the program succeeds on a task, one successful episode distilled into a LoRA adapter (tools/train_adapter.py) teaches
    the raw paraphrase to the frozen VLA (3/5 from 1 episode, 4/5 from 3) -> sample-efficiency data point; adapters do not
@@ -26,10 +28,18 @@ Best so far: `carry_handback4.py` (destination moved, pick unchanged: spatial_sw
 the nudge search: 0/5 5/15, 4 8/15, 2 6/15); for a moved pick
 object `approach_handback.py` (under test). Key: let the VLA do the final alignment and release with its cameras SEEING the
 target, its believed position shifted to its memorised point (E27, E29). Weak point: tracking (E14, E30).
+INTERNAL alternative (session 2): `dest_swap_fb.py`: the VLA does everything; the tracked offset is fed into the closed-form
+destination interface at expert L0 (directions/dest_pinv_L0.pt, E40) while holding, with integral feedback near the goal.
+spatial_swap 2: 3/5 dev (open loop 0/2). Same tracking dependency as carry_handback.
 Earlier: not solved. What is known (knowledge/swap.md, network_map.md): targets are memorised per instruction; the image barely moves
 them; destination interpolation works only among destinations trained with the same object; spatial destinations are
 hard-wired. Image-only perception that works: SigLIP feature tracking (E08, E14) + agentview camera model. Placement must be
 within 3 cm of the target centre (LIBERO 'On'), so open-loop carry controllers need sub-patch precision.
+
+## Multi-step instructions ('open X and put Y in it'): skill composition (goal_lan 3, unsolved)
+Sequence sub-instructions; RETURN TO THE START POSE INCLUDING ORIENTATION before every new sub-skill (otherwise the VLA drifts
+or picks the wrong object); the opened container's location is measurable from the robot's own pull motion
+(programs/candidates/open_then_place.py). Open problem: carrying a rim-grasped bowl under program control drops it.
 
 ## Evaluation protocol that worked
 Screen 5-10 dev episodes -> confirm on 20 -> VERIFY file (held-out 20-49). Two simulator jobs at a time

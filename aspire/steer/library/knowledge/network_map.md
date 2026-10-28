@@ -36,6 +36,12 @@ cross-attend to the prefix KV of the same layer index. Actions: 7-d, world-align
 | images in the expert | used heavily for HOW to move (blind to wrist: 10x noise path change, both images 19x; grasp moves 9-14 cm) but not for WHERE: another scene's image does not retarget (E17) | E29, E17 |
 | swapped layouts | the policy goes to memorised positions (spatial_swap: correct bowl, trained plate spot) | traces, knowledge/swap.md |
 
+| a steerable MOTION code | the action expert's first layer: one learned additive vector at expert L0 (all action tokens) shifts the predicted place point by 79% of 8 cm on unseen tasks/scenes with 0.2 cm off-axis error; L4-L12 59-66%; the same search in VLM layers (all tokens or the state token) <= 6% | E37 |
+
+| the destination code is LINEAR and SHARED | Jacobian of the chunk endpoint w.r.t. an additive vector at expert L0/L4/L8: same for every observation (cos 0.89-0.93 to the mean), effectively rank 2 (x, y); its pseudo-inverse moves the predicted place point by exactly the requested (dx, dy) on unseen tasks (gain 1.00, 0.3 cm off-axis at 8 cm; 0.97 at 20 cm) | E40 |
+| the REACH uses the same code | on reaching observations the endpoint Jacobian at expert L0 is as consistent (cos 0.94), rank ~2, aligned with the holding one (cos 0.86); pinv gain 0.92 on unseen tasks | E41 |
+| closed loop with the code | gated on holding, the VLA carries and releases ~7.5 cm away by itself (dose 1, E37b); for 15 cm swaps open loop drifts in x and never releases, integral feedback on the lever input succeeds 3/5 (spatial_swap 2) | dest_swap_fb |
+
 ## Phase (reach vs transport)
 | what | where | evidence |
 |---|---|---|

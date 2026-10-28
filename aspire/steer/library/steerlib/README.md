@@ -16,6 +16,9 @@ library and have no evidence yet. Evidence numbers: development episodes unless 
 | `canon.Dialect.seen(ngram)` | n-gram occurrence in the trained instructions | used by lexfacts_mask deletion rule |
 | `canon.completions(dialect)` | noun-phrase completions learned from n-gram statistics ('black' before 'bowl', 'of the cabinet' after 'drawer') | changes only goal_lan 3 rewrite; untested in sim |
 
+| `canon.coord_article(sentence, exclude)` (v15) | general English determiner repetition: 'the A and B' -> 'the A and the B' for a bare noun B (noun = used after 'the' in the dialect) | spatial_lan 0 with the v15 fallback fix: **held-out 22/30 vs frozen 10/30 (PROMOTED)**; changes no other goal/spatial rewrite |
+| programs `canon_v15.py` / `canon_v16.py` | v15 = v14 + fallback fix (a dialect noun after 'and' is not an untranslated verb) + coord_article; v16 = v15 + dialect deletion of out-of-dialect 'on top of the X' (text twin of lexfacts_mask) | v16: goal_lan 8 9/10 dev (v033 auto 0/5); `auto.py` uses v16 |
+
 Limits: verbs that only the twin uses cannot be produced (push for goal_lan 5: 0/10); 'on top of the plate' (goal_lan 8) is kept
 by the LM (0/10); goal_lan 3 needs a two-step skill (drawer opens with 'open the top drawer of the cabinet', placing fails).
 
@@ -72,6 +75,31 @@ by the LM (0/10); goal_lan 3 needs a two-step skill (drawer opens with 'open the
 | `interventions.push(ctx, direction, layer, sigmas)` | additive steering term from a stored direction | seed (the pilot's mean-difference directions: no effect) |
 | `interventions.ablate(ctx, module, unit, scale)` | remove or amplify one direction in a module's output | seed |
 | `interventions.scale_output(ctx, module, factor)` | rescale a module's output | seed |
+
+## levers.py: lever discovery by minimal sufficient intervention (session 2)
+
+| function | what | evidence |
+|---|---|---|
+| `levers.sparse_neurons(lab, examples, where, layers, l1, steps)` | proximal-L1 gradient search over the MLP neurons of several layers at once (added activations at down_proj inputs) so predicted chunks match targets; the support is the discovered lever, sorted by residual-space size | E38 (running) |
+| `levers.apply(policy, sol, scale, keep)` / `levers.install(ctx, sol)` | apply offline / in a program; install returns a dict whose 'scale' the program sets per chunk (state-dependent dose, 0 = off) | |
+
+## Learned vectors (steer.lab.optimize_vector; library/directions/)
+
+| entry | what | evidence |
+|---|---|---|
+| `directions/dest_expert0_y8.pt` | additive vector at action-expert layer 0 MLP output (all action tokens) learned to move the predicted place point by +8 cm in y from 18 holding obs of trained spatial tasks 0-4 | E37: on 5 OTHER tasks 79% of the wanted shift, 0.2 cm off-axis; VLM-layer vectors <= 6%. Closed loop: pending |
+
+| `directions/dest_iface_L0.pt` | E39 gradient-trained linear interface M (720 x 2), v = M @ (dx, dy) | offline gain 0.60 on unseen tasks (under-trained, 50 steps) |
+| `directions/dest_pinv_L{0,4,8}.pt` | E40 CLOSED-FORM interface: P = pinv(mean endpoint Jacobian) (720 x 2), v = P @ (dx, dy); no training (one backward per obs) | offline gain 1.00, 0.3 cm off-axis (8 cm), 0.97 (20 cm) on unseen tasks; closed loop: see dest_swap_fb |
+| `directions/reach_pinv_L0.pt` | E41: same closed-form interface computed on REACHING observations (retargets the predicted reach) | offline gain 0.92 on unseen tasks; not yet used in a program |
+| programs `dest_vector.py`, `dest_swap.py`, `dest_swap_fb.py`, `dest_swap_fb2.py` (v4b: feedback after the transport, latched lever) | the VLA does all motion; the program sets its INTERNAL destination: lever at expert L0 gated on holding, dose = tracked offset (image), optional integral feedback on the lever input near the goal (FB, FB_RADIUS) | E37b: +7.1..7.9 cm closed-loop shift (trained scene, 3/3); spatial_swap 2: open loop 0/2, feedback 3/5 dev (frozen 0/10), VERIFY requested; fb2: spatial_swap 4 1/1 |
+
+## Evaluation tools
+
+| tool | what |
+|---|---|
+| `tools/panel.py <version>` | fixed 16-task development panel (eps 0-4), each library version's own auto.py in an isolated copy; table in notes/panel.md (frozen 5/80, v033 35/80) |
+| `knowledge/discoveries.md` | ledger: every intervention with the experiment that found it, method, data, cost, seed or not |
 
 ## Neuron facts
 | neuron | effect | evidence |

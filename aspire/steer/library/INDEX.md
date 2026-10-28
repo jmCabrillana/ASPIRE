@@ -31,3 +31,5 @@ Held-out initial states 20-49; frozen VLA vs program; one-sided Fisher exact tes
 | approach_handback | libero_goal_swap 9 | 0/30 | 4/30 | 0.056 | not promoted | v029 |
 | carry_handback4 | libero_spatial_swap 7 | 0/30 | 18/30 | 0.000 | PROMOTED | v030 |
 | lexfacts | libero_goal_lan 4 | 23/30 | 24/30 | 0.500 | not promoted | v032 |
+| canon_v15 | libero_spatial_lan 0 | 10/30 | 22/30 | 0.002 | PROMOTED | v037 |
+| dest_swap_fb | libero_spatial_swap 2 | 0/30 | 9/30 | 0.001 | PROMOTED | v055 |

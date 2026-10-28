@@ -1,3 +1,48 @@
+# SESSION 2 (2026-10-27 16:40-00:40) - read this block first
+
+New verified: **spatial_lan 0 canon_v15 22/30 vs frozen 10/30 (PROMOTED)** -> all 10 spatial_lan tasks promoted.
+auto.py now = canon_v16 for *_lan (v15: fallback fix + coordination article; v16: + dialect deletion of 'top of', goal_lan 8 9/10).
+Development panel (tools/panel.py, notes/panel.md; 16 fixed tasks x eps 0-4): frozen 5/80, v033 (end of session 1) 35/80.
+The current version was NOT scored (GPU starved, see below): run `tools/panel.py <latest version>` first next session.
+Discovery ledger: knowledge/discoveries.md (method, data, cost for every intervention; operator paper target 1).
+
+## Main finding: the action expert's first layer carries a LINEAR, SHARED planar motion code (destination and reach)
+- E37 (gradient search, 9 sites): one additive vector at expert L0 moves the predicted place point by 79% of 8 cm on 5 unseen
+  tasks (0.2 cm off-axis); the same search in any VLM layer <= 6%. E37b closed loop (gated on holding): the VLA carries and
+  RELEASES BY ITSELF 7.1-7.9 cm from its memorised place point (3/3).
+- E40 (control view): the Jacobian of the chunk endpoint w.r.t. an added vector at expert L0/L4/L8 is the SAME for every
+  observation (cos 0.93) and rank ~2. Its pseudo-inverse is a closed-form destination interface, no training, ~1 GPU min:
+  gain 1.00 / 0.3 cm off-axis at 8 cm, 0.97 at 20 cm on unseen tasks (gradient-trained interface E39: 0.60; single vector 0.79).
+- E41: reaching observations share the code (Jacobian cos 0.86 with the holding one; pinv gain 0.92): the same interface can
+  retarget the GRASP (untested in closed loop; for goal_swap where the pick object moved).
+- dest_swap_fb (programs/candidates): the VLA performs every motion and the release itself on spatial_swap 2; the program only
+  (a) tracks the plate in the image, (b) feeds the tracked offset into the E40 interface while holding, (c) corrects the
+  interface input by integral feedback near the goal. Open loop: x drifts, no release (0/2). With feedback: 3/5 dev (eps 1-3;
+  frozen 0/10). VERIFY requested 22:50 (driver running at the end of the session). A gated release through the gripper-switch
+  neuron (E28) is in v3 but never fired (the VLA released by itself in every success).
+- dest_swap_fb2.py (v4b): feedback engages after the transport (not by distance) and the lever is LATCHED until the release:
+  spatial_swap 4 ep 0 success (v3 failed: its 'lifted above grasp height' gate switched the lever off during the descent because
+  the bowl is picked from the drawer above the plate - a clean example of why the WHEN of an intervention matters).
+
+## Other results
+- goal_lan 3 skill composition (open_then_place.py): sequencing works; the opened drawer is located from the robot's own pull
+  motion; a sub-skill must restart from the start pose INCLUDING orientation (else the VLA drifts or grasps the wine bottle);
+  but the rim-grasped bowl slips during program carries, 0/5 in every variant. Idea for next time: retarget the VLA's OWN carry
+  ('put the bowl on top of the cabinet') with the E40 interface toward the self-measured drawer, instead of a program carry.
+- Operator's paper targets: (1) ledger; (2) gating: open-loop vs feedback on the internal lever (0/2 vs 3/5 on the same task);
+  always-on vs gated not yet run; (3) general entries: E40 interface + tracking is task-independent; (4) panel tool.
+- GPU: from ~18:05 an outside graphics workload (no CUDA process visible; Firefox/GNOME) time-sliced the GPU: matmul 4 TFLOPS,
+  simulator episodes 5-10 min instead of 5-20 s. Batch lab work (16 obs per forward: 9x throughput). Operator notified.
+
+## Next steps (session 3)
+1. Score the panel for the latest version; check VERIFY dest_swap_fb spatial_swap 2.
+2. dest_swap_fb2 (latched, v4b) on spatial_swap 2 (all eps), 0, 4, 5 (y shifts), 9, 7 (x shifts); verify the best; then the
+   reach interface (directions/reach_pinv_L0.pt) for goal_swap (moved bowl). Compare with carry_handback4 on the same eps.
+3. Gating ablations for paper target 2: GATE=always; FB=0 vs 0.5 on more episodes; release lever with a radius matched to the
+   tracking error (~2-3 cm).
+4. goal_lan 3: VLA carry retargeted by the interface into the self-measured drawer.
+5. Sparse lever search (steerlib/levers.py, E38 script ready) on the destination code: how many neurons carry it?
+
 # Code-as-Steering: state of the research (session 1, 2026-10-26 16:40 - 10-27 00:10)
 
 Read this first; details and numbers in `JOURNAL.md`, mechanisms in `../knowledge/`, functions in `../steerlib/README.md`.
