@@ -484,3 +484,22 @@ def normalize(instruction: str) -> str:
                     break
         i += 1
     return " ".join(out)
+
+
+def coord_article(sentence: str, exclude=None) -> str:
+    """General English normalisation (v15): repeat the determiner in a coordinated noun phrase, 'the A and B' -> 'the A and
+    the B', when B is a bare noun. A word counts as a noun if the trained instructions (twin excluded) use it after 'the'; a
+    verb after 'and' ('and place it') is never touched. Motivation: E25 (function words move the behaviour like content
+    words), spatial_lan 0 ('between the plate and ramekin')."""
+    d = Dialect(exclude)
+    nouns = {s[i + 1] for s in d.sents for i in range(len(s) - 1) if s[i] == "the"}
+    dets = {"the", "a", "an", "both", "this", "that", "its", "their"}
+    ws = sentence.split()
+    out = []
+    for i, w in enumerate(ws):
+        out.append(w)
+        if w == "and" and 0 < i < len(ws) - 1 and ws[i + 1] in nouns and ws[i + 1] not in dets:
+            prev = ws[max(0, i - 3):i]
+            if ws[i - 1] in nouns and "the" in prev:
+                out.append("the")
+    return " ".join(out)
